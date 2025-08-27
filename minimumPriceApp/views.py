@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework import status, serializers
 import pandas as pd
 import numpy as np
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from io import BytesIO
 import os
 import urllib.request
@@ -20,6 +20,11 @@ import time
 import re
 import openpyxl
 from openpyxl.styles import PatternFill
+import logging
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+import tempfile
+from openpyxl.utils import get_column_letter
 
 # API Configuration
 NAVER_CLIENT_ID = "S_iul25XJKSybg_fiSAc"
@@ -472,40 +477,34 @@ def clean_dataframe_for_json(df):
     return df_clean
 
 
-# API Views
-@api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
-def hello_rest_api(request):
-    """Simple hello endpoint"""
-    data = {'message': 'Hello, REST API!'}
-    print(data)
-    return Response(data)
-
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @parser_classes([MultiPartParser, FormParser])
 def upload_excel(request):
-    """Upload and preview Excel file"""
-    if 'excel_file' not in request.FILES:
-        return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    excel_file = request.FILES['excel_file']
-    
     try:
-        df = pd.read_excel(excel_file)
-        serializer = ExcelDataSerializer()
-        sample_data = [serializer.to_representation(row.to_dict()) for _, row in df.head(10).iterrows()]
+        # 1. Excel 파일 받기
+        if 'excel_file' not in request.FILES:
+            return JsonResponse({'error': 'No file provided'}, status=400)
         
-        return Response({
-            'message': 'File uploaded successfully',
-            'total_rows': len(df),
-            'columns': df.columns.tolist(),
-            'sample_data': sample_data,
-        }, status=status.HTTP_200_OK)
+        excel_file = request.FILES['excel_file']
+        
+        # 2. 네이버 API로 최저가 검색 및 가격 업데이트
+        new_wb, price_changes = ExcelProcessor.process_workbook(excel_file)
+        
+        # 3. 가격 변경 정보를 JSON으로 반환 (파일 다운로드 대신)
+        return JsonResponse({
+            'message': '최저가 검색이 완료되었습니다',
+            'success': True,
+            'total_products': len(price_changes),
+            'price_changes': price_changes  # 이미 딕셔너리 리스트 형태로 되어있을 것
+        }, status=200)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        logger.error(f"Excel 파일 처리 중 오류: {str(e)}")
+        return JsonResponse({
+            'error': f'처리 중 오류가 발생했습니다: {str(e)}',
+            'success': False
+        }, status=500)
 
 
 @api_view(['POST'])
@@ -583,3 +582,245 @@ def process_excel_with_preview(request):
         
     except Exception as e:
         return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+
+
+
+# 엑셀 수량, 가격 수정
+logger = logging.getLogger(__name__)
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def update_excel_file(request):
+    temp_file_path = None
+    output_temp_path = None
+    
+    try:
+        # 1. 요청 데이터 검증 및 파싱
+        excel_file = request.FILES.get('excel_file')
+        modifications_json = request.POST.get('modifications')
+        original_filename = request.POST.get('original_filename', 'modified.xlsx')
+        
+        if not excel_file or not modifications_json:
+            return JsonResponse({'error': 'Missing required data'}, status=400)
+        
+        modifications = json.loads(modifications_json)
+        
+        logger.info("=" * 50)
+        logger.info("Excel 파일 처리 시작")
+        logger.info("=" * 50)
+        logger.info(f"원본 파일명: {original_filename}")
+        logger.info(f"원본 파일 크기: {excel_file.size} bytes")
+        logger.info(f"수신된 수정 항목 개수: {len(modifications)}")
+        
+        # 2. 임시 파일로 저장
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as temp_file:
+            temp_file_path = temp_file.name
+            for chunk in excel_file.chunks():
+                temp_file.write(chunk)
+        
+        logger.info(f"임시 파일 생성: {temp_file_path}")
+        
+        # 3. 워크북 로드
+        try:
+            workbook = openpyxl.load_workbook(temp_file_path, data_only=False)
+            worksheet = workbook.worksheets[0]
+            logger.info(f"워크북 로드 성공. 시트명: {worksheet.title}")
+        except Exception as e:
+            logger.error(f"워크북 로드 실패: {str(e)}")
+            return JsonResponse({'error': f'Excel 파일을 읽을 수 없습니다: {str(e)}'}, status=400)
+        
+        # 4. 워크시트 범위 정보 확인 및 확장
+        actual_max_row = worksheet.max_row
+        actual_max_col = worksheet.max_column
+        max_requested_row = max(int(mod['excelRow']) for mod in modifications) if modifications else 0
+        
+        logger.info(f"워크시트 정보:")
+        logger.info(f"  - openpyxl 감지 최대 행: {actual_max_row}")
+        logger.info(f"  - openpyxl 감지 최대 열: {actual_max_col}")
+        logger.info(f"  - 요청된 최대 행: {max_requested_row}")
+        logger.info(f"  - 계산된 범위: {worksheet.calculate_dimension()}")
+        
+        # 5. 워크시트 범위 강제 확장 (row 5가 비어있는 문제 해결)
+        if max_requested_row > actual_max_row:
+            logger.info(f"워크시트 범위 강제 확장: {actual_max_row} → {max_requested_row}")
+            # 마지막 행에 빈 값 설정으로 범위 확장
+            worksheet.cell(row=max_requested_row, column=actual_max_col).value = ""
+            logger.info(f"확장 후 범위: {worksheet.calculate_dimension()}")
+        
+        # 6. 원본 데이터 상태 확인 (디버깅)
+        logger.info("=" * 30)
+        logger.info("원본 데이터 상태 확인 (1-10행)")
+        logger.info("=" * 30)
+        for row in range(1, 11):
+            d_val = worksheet.cell(row=row, column=4).value  # D열 (상품명)
+            f_val = worksheet.cell(row=row, column=6).value  # F열 (가격)
+            h_val = worksheet.cell(row=row, column=8).value  # H열 (재고)
+            logger.info(f"행 {row}: D='{d_val}' F='{f_val}' H='{h_val}'")
+        
+        # 7. 수정 작업 수행
+        logger.info("=" * 30)
+        logger.info("수정 작업 시작")
+        logger.info("=" * 30)
+        
+        updated_count = 0
+        for i, mod in enumerate(modifications):
+            try:
+                row_num = int(mod['excelRow'])
+                price = mod['price']
+                stock = mod['stock']
+                product_name = mod.get('productName', 'Unknown')
+                
+                # 행 번호 유효성 검사
+                if not (1 <= row_num <= 1000000):
+                    logger.warning(f"잘못된 행 번호: {row_num}")
+                    continue
+                
+                logger.info(f"[{i+1}/{len(modifications)}] 처리 중...")
+                logger.info(f"  상품: {product_name}")
+                logger.info(f"  행: {row_num}")
+                logger.info(f"  새 가격: {price}")
+                logger.info(f"  새 재고: {stock}")
+                
+                # 수정 전 상태 확인
+                old_price = worksheet.cell(row=row_num, column=6).value
+                old_stock = worksheet.cell(row=row_num, column=8).value
+                logger.info(f"  기존 가격: {old_price}")
+                logger.info(f"  기존 재고: {old_stock}")
+                
+                # 주변 셀 데이터 확인 (A, D, G열 등)
+                a_val = worksheet.cell(row=row_num, column=1).value
+                d_val = worksheet.cell(row=row_num, column=4).value
+                g_val = worksheet.cell(row=row_num, column=7).value
+                logger.info(f"  주변 데이터: A='{a_val}' D='{d_val}' G='{g_val}'")
+                
+                # 가격 업데이트 (F열)
+                price_cell = worksheet.cell(row=row_num, column=6)
+                if price in ['', None]:
+                    price_cell.value = None
+                else:
+                    try:
+                        new_price = float(price)
+                        price_cell.value = new_price
+                        logger.info(f"  ✓ 가격 업데이트: {old_price} → {new_price}")
+                    except (ValueError, TypeError):
+                        price_cell.value = 0
+                        logger.warning(f"  ⚠ 가격 변환 실패, 0으로 설정: {price}")
+                
+                # 재고 업데이트 (H열)
+                stock_cell = worksheet.cell(row=row_num, column=8)
+                if stock in ['', None]:
+                    stock_cell.value = None
+                else:
+                    try:
+                        new_stock = int(float(stock))
+                        stock_cell.value = new_stock
+                        logger.info(f"  ✓ 재고 업데이트: {old_stock} → {new_stock}")
+                    except (ValueError, TypeError):
+                        stock_cell.value = 0
+                        logger.warning(f"  ⚠ 재고 변환 실패, 0으로 설정: {stock}")
+                
+                # 수정 후 주변 데이터 무결성 확인
+                after_a = worksheet.cell(row=row_num, column=1).value
+                after_d = worksheet.cell(row=row_num, column=4).value
+                after_g = worksheet.cell(row=row_num, column=7).value
+                
+                if after_a != a_val or after_d != d_val or after_g != g_val:
+                    logger.error(f"  ✗ 주변 데이터 변경 감지! A:{a_val}→{after_a}, D:{d_val}→{after_d}, G:{g_val}→{after_g}")
+                else:
+                    logger.info(f"  ✓ 주변 데이터 무결성 확인됨")
+                
+                updated_count += 1
+                
+            except Exception as e:
+                logger.error(f"항목 {i+1} 처리 중 오류: {str(e)}")
+                continue
+        
+        logger.info(f"총 {updated_count}/{len(modifications)}개 항목 업데이트 완료")
+        
+        # 8. 최종 검증
+        logger.info("=" * 30)
+        logger.info("최종 검증")
+        logger.info("=" * 30)
+        for mod in modifications[:3]:  # 처음 3개만 검증
+            row_num = int(mod['excelRow'])
+            final_price = worksheet.cell(row=row_num, column=6).value
+            final_stock = worksheet.cell(row=row_num, column=8).value
+            logger.info(f"행 {row_num}: F={final_price}, H={final_stock}")
+        
+        # 9. 파일 저장
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as output_temp:
+            output_temp_path = output_temp.name
+        
+        try:
+            workbook.save(output_temp_path)
+            logger.info("워크북 저장 완료")
+        except Exception as e:
+            logger.error(f"워크북 저장 실패: {str(e)}")
+            raise e
+        finally:
+            workbook.close()
+        
+        # 10. 저장된 파일 검증
+        output_size = os.path.getsize(output_temp_path)
+        logger.info(f"저장된 파일 크기: {output_size} bytes")
+        
+        if output_size == 0:
+            raise Exception("저장된 파일 크기가 0입니다")
+        
+        # 11. 저장된 파일 재검증
+        try:
+            verify_workbook = openpyxl.load_workbook(output_temp_path, data_only=True)
+            verify_worksheet = verify_workbook.worksheets[0]
+            
+            logger.info("저장된 파일 재검증:")
+            for mod in modifications[:2]:
+                row_num = int(mod['excelRow'])
+                verify_price = verify_worksheet.cell(row=row_num, column=6).value
+                verify_stock = verify_worksheet.cell(row=row_num, column=8).value
+                logger.info(f"  행 {row_num}: F={verify_price}, H={verify_stock}")
+            
+            verify_workbook.close()
+        except Exception as e:
+            logger.error(f"파일 재검증 실패: {str(e)}")
+        
+        # 12. HTTP 응답 생성
+        with open(output_temp_path, 'rb') as f:
+            file_content = f.read()
+        
+        base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
+        new_filename = f"{base_name}_modified.xlsx"
+        
+        response = HttpResponse(
+            file_content,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="{new_filename}"'
+        response['Content-Length'] = len(file_content)
+        
+        logger.info("=" * 50)
+        logger.info("Excel 파일 처리 완료")
+        logger.info("=" * 50)
+        logger.info(f"파일명: {new_filename}")
+        logger.info(f"응답 크기: {len(file_content)} bytes")
+        
+        return response
+        
+    except Exception as e:
+        logger.error("=" * 50)
+        logger.error("전체 처리 중 오류 발생")
+        logger.error("=" * 50)
+        logger.error(f"오류: {str(e)}")
+        import traceback
+        logger.error(f"스택 트레이스:\n{traceback.format_exc()}")
+        return JsonResponse({'error': f'처리 중 오류가 발생했습니다: {str(e)}'}, status=500)
+        
+    finally:
+        # 임시 파일 정리
+        for file_path, desc in [(temp_file_path, "입력"), (output_temp_path, "출력")]:
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.unlink(file_path)
+                    logger.info(f"{desc} 임시 파일 삭제: {file_path}")
+                except Exception as e:
+                    logger.warning(f"{desc} 임시 파일 삭제 실패: {e}")

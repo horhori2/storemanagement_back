@@ -1,0 +1,8 @@
+# openpyxl>=3.0.0
+
+# INSTALLED_APPS에서 필요한 설정
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']  # 개발 환경
+
+# 파일 업로드 크기 제한
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024   # 10MB
