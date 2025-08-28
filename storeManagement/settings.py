@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'minimumPriceApp',
+    'cardStockManageApp',
 ]
 
 MIDDLEWARE = [
@@ -100,13 +101,18 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'UTC'
+# TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
+# 시간대를 한국 표준시로 설정
+TIME_ZONE = 'Asia/Seoul'
+
+# 국제화 사용 여부 (True로 설정하면 시간대 변환 기능 활성화)
 USE_TZ = True
+
+# 언어 설정 (선택사항)
+LANGUAGE_CODE = 'ko-kr'
 
 
 # Static files (CSS, JavaScript, Images)
