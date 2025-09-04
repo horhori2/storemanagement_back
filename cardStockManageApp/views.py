@@ -11,6 +11,8 @@ from datetime import datetime, timedelta
 import django_filters
 from .models import CardVersion, TCGGame, Card, CardSet, Inventory, InventoryLog
 from .serializers import TCGGameSerializer, CardSetSerializer, CardDetailSerializer, CardSearchSerializer, CardVersionListSerializer, CardSimpleSerializer, DailyPriceHistorySerializer, PriceUpdateSerializer, PriceHistorySerializer, CardVersionDetailSerializer, InventorySerializer, BulkStockUpdateSerializer, SaleSerializer
+from rest_framework.views import APIView
+from rest_framework.generics import ListAPIView
 
 # Custom Filters
 class CardVersionFilter(django_filters.FilterSet):
@@ -255,3 +257,65 @@ class SaleViewSet(viewsets.ViewSet):
         stats['period'] = period
         
         return Response(stats)
+    
+
+
+class GameSetsView(ListAPIView):
+    """특정 게임의 카드 세트 목록"""
+    serializer_class = CardSetSerializer
+    permission_classes = [AllowAny]
+    
+    def get_queryset(self):
+        game_slug = self.kwargs['slug']
+        return CardSet.objects.filter(
+            game__slug=game_slug, 
+            is_active=True
+        ).order_by('-release_date')
+
+
+class SetCardsView(ListAPIView):
+    """특정 세트의 카드 목록"""
+    serializer_class = CardSimpleSerializer
+    permission_classes = [AllowAny]
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ['name', 'name_kr', 'card_number']
+    ordering_fields = ['card_number', 'name']
+    ordering = ['card_number']
+    
+    def get_queryset(self):
+        set_code = self.kwargs['set_code']
+        return Card.objects.filter(
+            set__set_code=set_code
+        ).select_related('game', 'set')
+
+
+# TCGGameViewSet에 추가 action
+# 기존 TCGGameViewSet 클래스에 다음 메서드 추가:
+
+@action(detail=True, methods=['get'])
+def sets(self, request, slug=None):
+    """특정 게임의 카드 세트 목록"""
+    game = self.get_object()
+    sets = game.sets.filter(is_active=True).order_by('-release_date')
+    serializer = CardSetSerializer(sets, many=True)
+    return Response(serializer.data)
+
+@action(detail=True, methods=['get']) 
+def statistics(self, request, slug=None):
+    """게임별 통계"""
+    game = self.get_object()
+    stats = {
+        'total_sets': game.sets.count(),
+        'total_cards': game.cards.count(),
+        'latest_set': None
+    }
+    
+    latest_set = game.sets.filter(is_active=True).order_by('-release_date').first()
+    if latest_set:
+        stats['latest_set'] = {
+            'name': latest_set.name_kr or latest_set.name,
+            'set_code': latest_set.set_code,
+            'release_date': latest_set.release_date
+        }
+    
+    return Response(stats)
