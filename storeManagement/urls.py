@@ -1,7 +1,6 @@
-
 from django.contrib import admin
 from django.urls import include, path
-from minimumPriceApp.views import upload_excel, process_excel_and_download, process_excel_with_preview, update_excel_file
+from minimumPriceApp.views import upload_excel, search_prices, download_excel
 # from cardStockManageApp.views import TCGGameViewSet, CardSetViewSet, CardViewSet, CardVersionViewSet, InventoryViewSet, SaleViewSet
 from rest_framework import routers
 from rest_framework.routers import DefaultRouter
@@ -34,14 +33,19 @@ urlpatterns = [
     
     # path('api/', include('rest_framework.urls')),
     # path('api/', include(router.urls)),
+    
+    # Excel 파일 업로드 및 데이터 추출
     path('api/upload-excel/', upload_excel, name='upload_excel'),
-    path('api/process-excel-download/', process_excel_and_download, name='process_excel_download'),
-    path('api/process-excel-preview/', process_excel_with_preview, name='process_excel_preview'),
+    
+    # 가격 검색 (네이버 쇼핑 API)
+    path('api/search-prices/', search_prices, name='search_prices'),
+    
+    # Excel 파일 다운로드 (가격/재고 업데이트 반영)
+    path('api/download-excel/', download_excel, name='download_excel'),
+    
+    # Swagger/ReDoc 문서
     path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('api/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-    path('api/excel/update/', update_excel_file, name='update_excel'),
 
     path('', include('cardStockManageApp.urls')),  # 앱 이름으로 변경
 ]
-
-

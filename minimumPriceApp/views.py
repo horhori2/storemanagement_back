@@ -77,51 +77,75 @@ class CardGamePatternExtractor:
     @staticmethod
     def extract_onepiece_info(product_name):
         """Extract One Piece card search information"""
-        # Exclude SP- rarity patterns
-        if re.search(r'\bSP-(SEC|R|SR|C|L|U|SP)\b', product_name):
-            return "EXCLUDE"
+        # SP- 패턴 체크 (모두 스페셜 카드로 처리)
+        sp_pattern = re.search(r'\bSP-(SP|SEC|R|SR|C|L|U|UC)\b', product_name)
+        if sp_pattern:
+            # 카드 번호 추출
+            card_match = re.search(r'(OP|EB|ST)\d{2}-\d{3}', product_name)
+            if card_match:
+                card_number = card_match.group()
+                return f"SP {card_number}"
+            else:
+                return None
         
-        # Check for P- rarity (parallel processing)
+        # P- 레어도 패턴 체크 (패러렐)
         has_p_rarity = bool(re.search(r'\bP-(SEC|R|SR|C|L|U)\b', product_name))
         
-        # Card number patterns
+        # 카드 번호 패턴 찾기
         card_patterns = [
-            r'(OP|EB|ST)\d{2}-\d{3}',  # Regular cards
-            r'P-\d{3}'  # Promo cards
+            (r'(OP|EB|ST)\d{2}-\d{3}', 'standard'),  # 일반 카드
+            (r'P-\d{3}', 'promo')  # 프로모 카드
         ]
         
-        for pattern in card_patterns:
+        for pattern, card_type in card_patterns:
             match = re.search(pattern, product_name)
             if match:
                 card_number = match.group()
-                if pattern == r'P-\d{3}':
+                
+                if card_type == 'promo':
                     return f"원피스 {card_number}"
-                return f"패러렐 {card_number}" if has_p_rarity else card_number
+                elif has_p_rarity:
+                    return f"패러렐 {card_number}"
+                elif card_number.startswith('ST'):
+                    return f"원피스 {card_number}"
+                else:
+                    return card_number
         
-        # Handle products starting with "원피스"
+        # "원피스"로 시작하는 경우 추가 검색
         if product_name.startswith("원피스"):
-            return CardGamePatternExtractor._extract_onepiece_fallback(product_name, has_p_rarity)
-        
-        return None
-    
-    @staticmethod
-    def _extract_onepiece_fallback(product_name, has_p_rarity):
-        """Fallback extraction for One Piece cards starting with '원피스'"""
-        other_patterns = [r'OP\d{2}-\d{3}', r'(ST|EB|PR)\d{2}-\d{3}', r'P-\d{3}']
-        
-        for pattern in other_patterns:
-            match = re.search(pattern, product_name)
-            if match:
-                card_number = match.group()
-                if pattern == r'P-\d{3}':
-                    return f"원피스 {card_number}"
-                return f"패러렐 {card_number}" if has_p_rarity else card_number
-        
-        # Grade and number pattern
-        grade_match = re.search(r'(SR|R|C|L|SEC)\s+(OP|ST|EB|PR)\d{2}-\d{3}', product_name)
-        if grade_match:
-            card_number = grade_match.group(2)
-            return f"패러렐 {card_number}" if has_p_rarity else card_number
+            other_patterns = [
+                (r'OP\d{2}-\d{3}', 'normal'),
+                (r'(ST|EB|PR)\d{2}-\d{3}', 'special'),
+                (r'P-\d{3}', 'promo')
+            ]
+            
+            for pattern, ptype in other_patterns:
+                match = re.search(pattern, product_name)
+                if match:
+                    card_number = match.group()
+                    
+                    if ptype == 'promo' or card_number.startswith('ST'):
+                        result = f"원피스 {card_number}"
+                    elif has_p_rarity:
+                        result = f"패러렐 {card_number}"
+                    else:
+                        result = card_number
+                    
+                    return result
+            
+            # 등급 패턴 검색
+            grade_match = re.search(r'(SR|R|C|L|SEC)\s+(OP|ST|EB|PR)\d{2}-\d{3}', product_name)
+            if grade_match:
+                card_number = grade_match.group(2)
+                
+                if has_p_rarity:
+                    result = f"패러렐 {card_number}"
+                elif card_number.startswith('ST'):
+                    result = f"원피스 {card_number}"
+                else:
+                    result = card_number
+                
+                return result
         
         return None
     
@@ -133,29 +157,43 @@ class CardGamePatternExtractor:
         if not parts or not parts[-1].strip().startswith("디지몬"):
             return None
         
+        # 희소/패러렐 여부 확인
         has_rare = any("희소" in part for part in parts)
         has_parallel = any("패러렐" in part for part in parts)
         
-        if len(parts) >= 2:
-            code_part = parts[-2].strip()
+        if len(parts) < 2:
+            return None
+        
+        code_part = parts[-2].strip()
+        
+        # 일반 카드 패턴
+        card_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{2,3}', code_part)
+        if card_match:
+            card_number = card_match.group()
             
-            # Regular card pattern
-            digimon_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{3}', code_part)
-            if digimon_match:
-                card_number = digimon_match.group()
-                if has_rare:
-                    return f"희소 {card_number}"
-                elif has_parallel:
-                    return f"패러렐 {card_number}"
-                else:
-                    return card_number
+            # 결과 결정
+            is_st_card = card_number.startswith('ST')
+            prefix = ""
             
-            # Promo card pattern
-            promo_match = re.search(r'P-\d{3}', code_part)
-            if promo_match:
-                card_number = promo_match.group()
-                prefix = "희소 디지몬" if has_rare else ("패러렐 디지몬" if has_parallel else "디지몬")
-                return f"{prefix} {card_number}"
+            if has_rare:
+                prefix = "희소 "
+            elif has_parallel:
+                prefix = "패러렐 "
+            
+            if is_st_card:
+                result = f"{prefix}디지몬 {card_number}"
+            else:
+                result = f"{prefix}{card_number}" if prefix else card_number
+            
+            return result.strip()
+        
+        # 프로모 카드 패턴
+        promo_match = re.search(r'P-\d{3}', code_part)
+        if promo_match:
+            card_number = promo_match.group()
+            prefix = "희소 " if has_rare else ("패러렐 " if has_parallel else "")
+            result = f"{prefix}디지몬 {card_number}"
+            return result.strip()
         
         return None
     
@@ -165,19 +203,55 @@ class CardGamePatternExtractor:
         if not product_name.startswith("포켓몬"):
             return None, None, None
         
-        # Promo card check
+        # 프로모 카드 확인
         promo_match = re.search(r'P-\d{3}', product_name)
         if promo_match:
             return f"포켓몬 {promo_match.group()}", None, None
         
-        # Extract rarity
-        rarity_pattern = r'\b(UR|SR|RR|RRR|CHR|CSR|BWR|AR|SAR|R|U|C|몬스터볼|마스터볼)\b'
-        rarity_match = re.search(rarity_pattern, product_name)
+        # 띄어쓰기로 구분 (마지막 단어=확장팩 제외)
+        words = product_name.split()
+        search_text = " ".join(words[:-1]) if len(words) > 1 else product_name
+        last_word = words[-1] if len(words) > 1 else ""
+        
+        # 레어도 추출 - SSR 추가!
+        rarity_pattern = r'\b(UR|SSR|SR|RR|RRR|CHR|CSR|BWR|AR|SAR|HR|R|U|C|몬스터볼|마스터볼|이로치)\b'
+        rarity_match = re.search(rarity_pattern, search_text)
         rarity = rarity_match.group(1) if rarity_match else None
         
-        # Extract Pokemon name
-        name_match = re.search(r'포켓몬카드\s+([가-힣A-Za-z]+)', product_name)
-        pokemon_name = name_match.group(1) if name_match else None
+        # 포켓몬 이름 추출 (레어도 제거)
+        temp_name = search_text
+        if rarity:
+            rarity_index = temp_name.find(rarity)
+            if rarity_index != -1:
+                temp_name = temp_name[:rarity_index].strip()
+        
+        # 특수 패턴 확인
+        patterns = {
+            'vmax': r'\b[가-힣A-Za-z\s]+(?:VMAX|Vmax|vmax)\b',
+            'vstar': r'\b[가-힣A-Za-z\s]+(?:VStar|vstar|VSTAR)\b',
+            'ex': r'\b[가-힣A-Za-z\s]+ex\b',
+            'v': r'\b[가-힣A-Za-z\s]+V\b(?!\s*(?:MAX|max|Star|star))'
+        }
+        
+        detected_patterns = {name: bool(re.search(pattern, temp_name, re.IGNORECASE)) 
+                            for name, pattern in patterns.items()}
+        
+        # 포켓몬 이름 추출
+        pokemon_name = None
+        extraction_rules = [
+            ('vmax', r'포켓몬카드\s+(.+?)\s*(?:VMAX|Vmax|vmax)'),
+            ('vstar', r'포켓몬카드\s+(.+?)\s*(?:VStar|vstar|VSTAR)'),
+            ('ex', r'포켓몬카드\s+(.+?ex)'),
+            ('v', r'포켓몬카드\s+(.+?)\s*V\b(?!\s*(?:MAX|max|Star|star))'),
+            (None, r'포켓몬카드\s+(.+)')
+        ]
+        
+        for pattern_name, regex in extraction_rules:
+            if pattern_name is None or detected_patterns.get(pattern_name, False):
+                name_match = re.search(regex, temp_name, re.IGNORECASE)
+                if name_match:
+                    pokemon_name = name_match.group(1).strip()
+                    break
         
         return product_name, rarity, pokemon_name
     
@@ -191,9 +265,7 @@ class CardGamePatternExtractor:
         
         # Try One Piece
         onepiece_result = CardGamePatternExtractor.extract_onepiece_info(product_name)
-        if onepiece_result == "EXCLUDE":
-            return "EXCLUDE", "원피스", None
-        elif onepiece_result:
+        if onepiece_result:
             return onepiece_result, "원피스", None
         
         # Try Pokemon
@@ -209,10 +281,10 @@ class NaverShoppingAPI:
     
     @staticmethod
     def search(search_name):
-        """Search products using Naver Shopping API"""
+        """Search Naver Shopping API"""
         try:
             enc_text = urllib.parse.quote(search_name)
-            url = f"https://openapi.naver.com/v1/search/shop?query={enc_text}&sort=sim&exclude=used:rental:cbshop&display=10"
+            url = f"https://openapi.naver.com/v1/search/shop?query={enc_text}&sort=sim&exclude=used:rental:cbshop&display=20"
             
             request = urllib.request.Request(url)
             request.add_header("X-Naver-Client-Id", NAVER_CLIENT_ID)
@@ -223,138 +295,216 @@ class NaverShoppingAPI:
                 result = json.loads(response.read())
                 return result.get('items', [])
             else:
-                print("❌ API 요청 실패")
+                logging.error("API request failed")
                 return []
         except Exception as e:
-            print(f"❌ 예외 발생: {e}")
+            logging.error(f"API exception: {e}")
             return []
+
+
+class ItemFilter:
+    """Filter API search results based on card game rules"""
     
     @staticmethod
-    def filter_results(items, search_name, card_type, pokemon_info=None):
-        """Filter API search results based on card type and conditions"""
+    def check_item_filters(title, mall_name, card_type, card_number,
+                          is_parallel, is_rare, is_special_day, is_special,
+                          required_rarity, required_pokemon_name):
+        """아이템 필터링 체크 (통과 여부와 로그 메시지 반환)"""
+        
+        # 제외 판매처
+        if mall_name in ["화성스토어-TCG-", "네이버", "쿠팡"]:
+            return False, f"❌ 제외: {mall_name}"
+        
+        # 일본판 제외
+        if any(keyword in title for keyword in ['일본', '일본판', 'JP', 'JPN', '일판']):
+            return False, "❌ 제외: 일본판"
+        
+        # 원피스/디지몬카드 번호 매칭
+        if card_type in ["원피스", "디지몬"] and card_number:
+            if card_number not in title:
+                return False, f"❌ 제외: 카드번호 '{card_number}' 불일치"
+        
+        # 원피스 스페셜 키워드 확인
+        if card_type == "원피스" and is_special:
+            special_keywords = ['스페셜', 'SP']
+            matched_keyword = next((kw for kw in special_keywords if kw in title), None)
+            if not matched_keyword:
+                return False, "❌ 제외: 스페셜 키워드 없음"
+        
+        # 원피스 패러렐 키워드 확인
+        elif card_type == "원피스" and is_parallel:
+            parallel_keywords = ['패러렐', '다른', '패레', 'P시크릿레어', '페러럴', '패러럴', '페러렐', '페레']
+            matched_keyword = next((kw for kw in parallel_keywords if kw in title), None)
+            if not matched_keyword:
+                return False, "❌ 제외: 패러렐 키워드 없음"
+        
+        # 디지몬 희소/패러렐 키워드 확인
+        elif card_type == "디지몬":
+            if is_rare and "희소" not in title:
+                return False, "❌ 제외: 희소 키워드 없음"
+            
+            if is_parallel and "패러렐" not in title:
+                return False, "❌ 제외: 패러렐 키워드 없음"
+        
+        # 포켓몬카드 조건 확인
+        elif card_type == "포켓몬":
+            if is_special_day and "특일" not in title:
+                return False, "❌ 제외: 특일 키워드 없음"
+            
+            # 포켓몬 이름 매칭
+            if required_pokemon_name:
+                clean_title = re.sub(r'<[^>]+>', '', title)
+                
+                # 띄어쓰기 제거 매칭
+                required_name_no_space = re.sub(r'\s+', '', required_pokemon_name)
+                title_no_space = re.sub(r'\s+', '', clean_title)
+                
+                if required_name_no_space.lower() in title_no_space.lower():
+                    pass  # 매칭 성공
+                else:
+                    # 개별 단어 매칭
+                    required_words = [word for word in required_pokemon_name.split() 
+                                    if word.lower() not in ['ex', 'v', 'vmax', 'vstar']]
+                    
+                    word_matches = sum(1 for word in required_words if word.lower() in clean_title.lower())
+                    
+                    if word_matches != len(required_words) or len(required_words) == 0:
+                        return False, f"❌ 개별 단어 매칭 실패 ({word_matches}/{len(required_words)})"
+            
+            # 레어도 매칭
+            if required_rarity:
+                clean_title = re.sub(r'<[^>]+>', '', title)
+                
+                if required_rarity not in clean_title:
+                    return False, f"❌ 제외: 레어도 '{required_rarity}' 미포함"
+        
+        return True, "✅ 통과: 필터링 조건 만족"
+    
+    @staticmethod
+    def filter_api_results(items, search_name, card_type, pokemon_info=None):
+        """API 검색 결과 필터링"""
         min_price = None
+        valid_items_count = 0
+        filter_match_info = "없음"
+        
+        # 검색 조건 설정
         is_parallel = "패러렐" in search_name
         is_rare = "희소" in search_name
+        is_special_day = "특일" in search_name
+        is_special = "SP" in search_name
         
-        # Extract card number
-        card_number = NaverShoppingAPI._extract_card_number(search_name, card_type, is_parallel, is_rare)
+        # 카드별 기본 필터 정보
+        if card_type == "원피스":
+            if is_special:
+                filter_match_info = "스페셜검색"
+            elif is_parallel:
+                filter_match_info = "패러렐검색"
+            else:
+                filter_match_info = "일반검색"
+        elif card_type == "디지몬":
+            filter_match_info = "희소검색" if is_rare else ("패러렐검색" if is_parallel else "일반검색")
+        elif card_type == "포켓몬":
+            filter_match_info = "필터없음"
+        
+        # 카드 번호 추출
+        card_number = None
+        if card_type in ["원피스", "디지몬"]:
+            pattern = r'(OP|ST|EB|PR)\d{2}-\d{3}' if card_type == "원피스" else r'(EX|BT|ST|RB|LM)\d{1,2}-\d{3}'
+            card_match = re.search(pattern, search_name)
+            card_number = card_match.group() if card_match else None
+        
+        # 포켓몬카드 정보
         required_rarity, required_pokemon_name = pokemon_info or (None, None)
         
+        # 아이템 필터링
         for item in items:
             title = item['title']
             price = float(item['lprice'])
+            mall_name = item.get('mallName', '')
             
-            # Skip Japanese versions
-            if any(keyword in title for keyword in ['일본', '일본판', 'JP', 'JPN']):
+            # 필터 체크
+            passed, log_msg = ItemFilter.check_item_filters(
+                title, mall_name, card_type, card_number,
+                is_parallel, is_rare, is_special_day, is_special,
+                required_rarity, required_pokemon_name
+            )
+            
+            if not passed:
                 continue
             
-            # Card number matching for One Piece/Digimon
-            if card_type in ["원피스", "디지몬"] and card_number and card_number not in title:
-                continue
+            # 통과한 상품
+            valid_items_count += 1
             
-            # Special card keyword checks
-            if not NaverShoppingAPI._check_special_conditions(title, card_type, is_parallel, is_rare):
-                continue
-            
-            # Pokemon card conditions
-            if card_type == "포켓몬" and not NaverShoppingAPI._check_pokemon_conditions(
-                title, required_pokemon_name, required_rarity
-            ):
-                continue
-            
-            # Update minimum price
+            # 최저가 업데이트
             if min_price is None or price < min_price:
                 min_price = price
+                
+                # 포켓몬카드 필터 정보 업데이트
+                if card_type == "포켓몬":
+                    if required_pokemon_name and required_rarity:
+                        filter_match_info = "포켓몬명+레어도"
+                    elif required_pokemon_name:
+                        filter_match_info = "포켓몬명만"
+                    elif required_rarity:
+                        filter_match_info = "레어도만"
+                    else:
+                        filter_match_info = "필터없음"
         
-        return min_price
-    
-    @staticmethod
-    def _extract_card_number(search_name, card_type, is_parallel, is_rare):
-        """Extract card number from search name"""
-        if card_type == "원피스":
-            if is_parallel:
-                card_match = re.search(r'(OP|ST|EB|PR)\d{2}-\d{3}', search_name)
-                return card_match.group() if card_match else None
-            elif re.match(r'(OP|ST|EB|PR)\d{2}-\d{3}', search_name):
-                return search_name
-        elif card_type == "디지몬":
-            if is_parallel or is_rare:
-                card_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{3}', search_name)
-                return card_match.group() if card_match else None
-            elif re.match(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{3}', search_name):
-                return search_name
-        return None
-    
-    @staticmethod
-    def _check_special_conditions(title, card_type, is_parallel, is_rare):
-        """Check special conditions for card types"""
-        if card_type == "원피스" and is_parallel:
-            return any(keyword in title for keyword in [
-                '패러렐', '다른', '패레', 'P시크릿레어', '페러럴', '패러럴', '페러렐', '페레'
-            ])
-        elif card_type == "디지몬":
-            if is_rare and "희소" not in title:
-                return False
-            if is_parallel and "패러렐" not in title:
-                return False
-        return True
-    
-    @staticmethod
-    def _check_pokemon_conditions(title, required_pokemon_name, required_rarity):
-        """Check Pokemon card specific conditions"""
-        if required_pokemon_name and required_pokemon_name not in title:
-            return False
-        
-        if required_rarity:
-            title_rarity = re.search(r'\b(UR|SR|RR|RRR|CHR|CSR|BWR|AR|SAR|R|U|C|몬스터볼|마스터볼)\b', title)
-            if not title_rarity or title_rarity.group(1) != required_rarity:
-                return False
-        return True
+        return min_price, valid_items_count, filter_match_info
 
 
 class PriceProcessor:
-    """Price processing and updating logic"""
+    """Process price updates for card games"""
     
     @staticmethod
-    def update_price(product_name, original_price):
-        """Update price based on Naver API search"""
+    def process_price_update(product_name, original_price):
+        """가격 업데이트 처리"""
         search_name, card_type, pokemon_info = CardGamePatternExtractor.extract_search_info(product_name)
         
-        if search_name == "EXCLUDE":
-            print(f"{product_name} : {int(original_price)} (SP- 레어도 - 변경없음)")
-            return original_price, "0원"
-        
         if not search_name:
-            print(f"{product_name} : {int(original_price)} (검색 패턴 없음)")
-            return original_price, "0원"
+            logging.info(f"{product_name} : {int(original_price)} (검색 패턴 없음)")
+            return original_price, 0, "미확인", "패턴없음", "패턴없음", 0
         
-        # API search
+        # API 검색
         items = NaverShoppingAPI.search(search_name)
-        min_price = NaverShoppingAPI.filter_results(items, search_name, card_type, pokemon_info)
+        min_price, valid_items_count, filter_match_info = ItemFilter.filter_api_results(
+            items, search_name, card_type, pokemon_info
+        )
         
-        # Calculate new price
+        # 가격 계산
         new_price = (min_price + PLUS_PRICE) if min_price is not None else original_price
-        price_diff = new_price - original_price
-        change_text = f"{price_diff:+.0f}원" if abs(price_diff) > 0.01 else "0원"
+        price_diff = int(new_price - original_price)
         
-        # Log the change
-        PriceProcessor._log_price_change(product_name, original_price, new_price, price_diff, card_type, search_name)
-        
-        time.sleep(API_DELAY)  # Rate limiting
-        return new_price, change_text
-    
-    @staticmethod
-    def _log_price_change(product_name, original_price, new_price, price_diff, card_type, search_name):
-        """Log price change information"""
-        if abs(price_diff) > 0.01:
-            print(f"{product_name} : {int(original_price)} → {int(new_price)} "
-                  f"({price_diff:+.0f}원) [{card_type}카드 검색어: {search_name}]")
+        # 상세 로깅
+        if abs(price_diff) > 0:
+            if card_type == "포켓몬" and pokemon_info:
+                rarity, pokemon_name = pokemon_info
+                info_text = f" (포켓몬: {pokemon_name or '없음'}"
+                if rarity:
+                    info_text += f", 레어도: {rarity}"
+                info_text += f", 필터: {filter_match_info})"
+                logging.info(f"{product_name} : {int(original_price)} → {int(new_price)} ({price_diff:+}원) [{card_type}카드 전체 검색{info_text}]")
+            else:
+                logging.info(f"{product_name} : {int(original_price)} → {int(new_price)} ({price_diff:+}원) [{card_type}카드 검색어: {search_name}]")
         else:
-            print(f"{product_name} : {int(original_price)} (변경없음) [{card_type}카드 검색어: {search_name}]")
+            if card_type == "포켓몬" and pokemon_info:
+                rarity, pokemon_name = pokemon_info
+                info_text = f" (포켓몬: {pokemon_name or '없음'}"
+                if rarity:
+                    info_text += f", 레어도: {rarity}"
+                info_text += f", 필터: {filter_match_info})"
+                logging.info(f"{product_name} : {int(original_price)} (변경없음) [{card_type}카드 전체 검색{info_text}]")
+            else:
+                logging.info(f"{product_name} : {int(original_price)} (변경없음) [{card_type}카드 검색어: {search_name}]")
+        
+        logging.info("-" * 60)
+        
+        time.sleep(API_DELAY)  # API 요청 제한 방지
+        return new_price, price_diff, card_type, filter_match_info, search_name, valid_items_count
     
     @staticmethod
-    def get_color_fill(original_price, new_price):
-        """Determine color based on price difference"""
+    def get_fill_color(original_price, new_price):
+        """가격 차이에 따른 색상 결정"""
         if abs(original_price - new_price) < 0.01:
             return COLOR_FILLS['none']
         
@@ -370,250 +520,234 @@ class PriceProcessor:
             return COLOR_FILLS['red']
 
 
-class ExcelProcessor:
-    """Excel file processing and manipulation"""
-    
-    @staticmethod
-    def add_color_legend(worksheet):
-        """Add color legend to A2~B5"""
-        for i, (color_name, range_text, fill_color) in enumerate(COLOR_LEGEND, 2):
-            worksheet.cell(row=i, column=1, value=color_name).fill = fill_color
-            worksheet.cell(row=i, column=2, value=range_text)
-    
-    @staticmethod
-    def process_workbook(excel_file):
-        """Process Excel workbook with price updates and formatting"""
-        wb = openpyxl.load_workbook(excel_file)
-        ws = wb.active
-        
-        new_wb = openpyxl.Workbook()
-        new_ws = new_wb.active
-        
-        price_changes = []
-        
-        # Process each row
-        for row_idx, row in enumerate(ws.iter_rows(), 1):
-            new_row, price_info, change_info = ExcelProcessor._process_row(row, row_idx)
-            new_ws.append(new_row)
-            
-            if price_info:
-                # Apply color to price cell (column H after adding A,B columns)
-                price_cell = new_ws.cell(row=new_ws.max_row, column=8)
-                price_cell.fill = PriceProcessor.get_color_fill(price_info[0], price_info[1])
-            
-            if change_info:
-                price_changes.append(change_info)
-                print("-" * 60)
-        
-        # Add color legend
-        ExcelProcessor.add_color_legend(new_ws)
-        
-        return new_wb, price_changes
-    
-    @staticmethod
-    def _process_row(row, row_idx):
-        """Process individual row"""
-        new_row = []
-        price_info = None
-        change_info = None
-        
-        # Add headers for A and B columns
-        if row_idx == 1:
-            new_row.extend(["변동률", "기존가격"])
-        else:
-            new_row.extend(["", ""])  # Placeholder values
-        
-        # Process existing data
-        for cell in row:
-            new_price = cell.value
-            
-            # Price processing (F column, row 6 and above)
-            if cell.column == PRICE_COLUMN + 1 and cell.row >= DATA_START_ROW:  # +1 for 1-indexed
-                product_name = row[PRODUCT_NAME_COLUMN].value if row[PRODUCT_NAME_COLUMN].value else None
-                
-                if product_name is not None:
-                    try:
-                        original_price = float(cell.value) if cell.value else 0
-                        new_price, change_text = PriceProcessor.update_price(str(product_name), original_price)
-                        
-                        # Update A and B columns
-                        new_row[0] = change_text
-                        new_row[1] = int(original_price)
-                        price_info = (original_price, new_price)
-                        
-                        # Store change information
-                        change_info = {
-                            'row': row_idx,
-                            'product_name': str(product_name),
-                            'original_price': original_price,
-                            'new_price': new_price,
-                            'change': change_text
-                        }
-                        
-                    except (TypeError, ValueError):
-                        new_row[0] = "0원"
-                        new_row[1] = int(original_price) if isinstance(cell.value, (int, float)) else 0
-            
-            new_row.append(new_price)
-        
-        return new_row, price_info, change_info
+# ==================== API Endpoints ====================
 
+# 로깅 설정 - 콘솔에도 출력되도록 설정
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
-def clean_dataframe_for_json(df):
-    """Clean DataFrame for JSON serialization"""
-    df_clean = df.copy()
-    df_clean = df_clean.replace([np.inf, -np.inf], np.nan)
-    
-    numeric_columns = df_clean.select_dtypes(include=[np.number]).columns
-    df_clean[numeric_columns] = df_clean[numeric_columns].fillna(0)
-    
-    string_columns = df_clean.select_dtypes(include=['object']).columns
-    df_clean[string_columns] = df_clean[string_columns].fillna('')
-    
-    date_columns = df_clean.select_dtypes(include=['datetime64']).columns
-    for col in date_columns:
-        df_clean[col] = df_clean[col].dt.strftime('%Y-%m-%d %H:%M:%S').fillna('')
-    
-    return df_clean
-
+# 콘솔 핸들러 추가
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+formatter = logging.Formatter('%(message)s')  # 심플한 포맷
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @parser_classes([MultiPartParser, FormParser])
 def upload_excel(request):
-    try:
-        # 1. Excel 파일 받기
-        if 'excel_file' not in request.FILES:
-            return JsonResponse({'error': 'No file provided'}, status=400)
-        
-        excel_file = request.FILES['excel_file']
-        
-        # 2. 네이버 API로 최저가 검색 및 가격 업데이트
-        new_wb, price_changes = ExcelProcessor.process_workbook(excel_file)
-        
-        # 3. 가격 변경 정보를 JSON으로 반환 (파일 다운로드 대신)
-        return JsonResponse({
-            'message': '최저가 검색이 완료되었습니다',
-            'success': True,
-            'total_products': len(price_changes),
-            'price_changes': price_changes  # 이미 딕셔너리 리스트 형태로 되어있을 것
-        }, status=200)
-        
-    except Exception as e:
-        logger.error(f"Excel 파일 처리 중 오류: {str(e)}")
-        return JsonResponse({
-            'error': f'처리 중 오류가 발생했습니다: {str(e)}',
-            'success': False
-        }, status=500)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-@parser_classes([MultiPartParser, FormParser])
-def process_excel_and_download(request):
-    """Process Excel file and return download response"""
-    if 'excel_file' not in request.FILES:
+    """
+    Upload Excel file and extract data
+    
+    Expected file format:
+    - D column: Product names (상품명)
+    - F column: Prices (가격)
+    - Data starts from row 6
+    """
+    if 'file' not in request.FILES:
         return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
     
-    excel_file = request.FILES['excel_file']
+    excel_file = request.FILES['file']
+    
+    # Validate file extension
+    if not excel_file.name.endswith(('.xlsx', '.xls')):
+        return Response({'error': 'Invalid file format. Please upload .xlsx or .xls file'}, 
+                       status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        new_wb, _ = ExcelProcessor.process_workbook(excel_file)
+        # Read Excel file
+        df = pd.read_excel(excel_file, header=None)
         
-        # Save to memory
-        output = BytesIO()
-        new_wb.save(output)
-        output.seek(0)
+        # Extract relevant columns (D=3, F=5, 0-indexed)
+        # Get all rows starting from index 5 (6th row in Excel, accounting for 0-indexing)
+        data_rows = []
+        for idx in range(DATA_START_ROW - 1, len(df)):  # -1 for 0-indexing
+            product_name = df.iloc[idx, PRODUCT_NAME_COLUMN]
+            price = df.iloc[idx, PRICE_COLUMN]
+            
+            # Skip if both values are NaN
+            if pd.isna(product_name) and pd.isna(price):
+                continue
+            
+            data_rows.append({
+                'excelRow': idx + 1,  # Convert to 1-indexed Excel row number
+                'productName': None if pd.isna(product_name) else str(product_name),
+                'price': None if pd.isna(price) else float(price)
+            })
         
-        # Create download response
-        file_name = f"modified_{os.path.splitext(excel_file.name)[0]}.xlsx"
-        response = HttpResponse(
-            output.getvalue(),
-            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        )
-        response['Content-Disposition'] = f'attachment; filename="{file_name}"'
-        response['Content-Length'] = str(len(output.getvalue()))
-        response['Access-Control-Allow-Origin'] = '*'
-        response['Access-Control-Expose-Headers'] = 'Content-Disposition, Content-Length'
-        
-        return response
-        
-    except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-@parser_classes([MultiPartParser, FormParser])
-def process_excel_with_preview(request):
-    """Process Excel file and return preview with download link"""
-    if 'excel_file' not in request.FILES:
-        return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
-    
-    excel_file = request.FILES['excel_file']
-    
-    try:
-        new_wb, price_changes = ExcelProcessor.process_workbook(excel_file)
-        
-        # Save to memory for preview
-        output = BytesIO()
-        new_wb.save(output)
-        output.seek(0)
-        
-        # Generate preview data
-        df_preview = pd.read_excel(BytesIO(output.getvalue()))
-        df_preview_clean = clean_dataframe_for_json(df_preview)
+        # Serialize data properly handling NaN/None values
+        serializer = ExcelDataSerializer(data_rows, many=True)
         
         return Response({
-            'message': 'File processed successfully with price search',
-            'column_modified': 'Column 6 prices updated based on Naver API search (from row 6 onwards)',
-            'price_changes': price_changes,
-            'total_rows': len(df_preview),
-            'columns': df_preview.columns.tolist(),
-            'modified_sample': df_preview_clean.head(10).to_dict('records'),
-            'color_legend': {
-                'green': '1000원 이하 차이',
-                'blue': '2000원 이하 차이', 
-                'yellow': '3000원 이하 차이',
-                'red': '3000원 초과 차이'
-            },
-            'download_url': '/api/process-excel-download/',
+            'message': 'File uploaded successfully',
+            'data': serializer.data,
+            'totalRows': len(data_rows)
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
-        return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': f'Failed to process file: {str(e)}'}, 
+                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def search_prices(request):
+    """
+    Search prices for card game products using Naver Shopping API
     
+    Request body:
+    {
+        "items": [
+            {"productName": "string", "currentPrice": float},
+            ...
+        ]
+    }
+    
+    Response:
+    {
+        "results": [
+            {
+                "productName": "string",
+                "currentPrice": float,
+                "newPrice": float,
+                "priceDiff": int,
+                "cardType": "string",
+                "filterInfo": "string",
+                "searchKeyword": "string",
+                "validItemsCount": int
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        items = request.data.get('items', [])
+        
+        if not items:
+            return Response({'error': 'No items provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 시작 로그
+        logging.info("=" * 80)
+        logging.info("🚀 카드 최저가 검색 시작")
+        logging.info("=" * 80)
+        logging.info(f"처리할 상품 수: {len(items)}개")
+        logging.info(f"현재 최저가에서 {PLUS_PRICE}원 추가됩니다.\n")
+        
+        results = []
+        
+        for idx, item in enumerate(items, 1):
+            product_name = item.get('productName')
+            current_price = item.get('currentPrice', 0)
+            
+            if not product_name:
+                continue
+            
+            logging.info(f"[{idx}/{len(items)}] 처리 중...")
+            
+            try:
+                new_price, price_diff, card_type, filter_info, search_keyword, valid_count = \
+                    PriceProcessor.process_price_update(product_name, float(current_price))
+                
+                results.append({
+                    'productName': product_name,
+                    'currentPrice': current_price,
+                    'newPrice': new_price,
+                    'priceDiff': price_diff,
+                    'cardType': card_type,
+                    'filterInfo': filter_info,
+                    'searchKeyword': search_keyword,
+                    'validItemsCount': valid_count
+                })
+            except Exception as e:
+                logging.error(f"상품 처리 중 오류 ({product_name}): {str(e)}")
+                results.append({
+                    'productName': product_name,
+                    'currentPrice': current_price,
+                    'newPrice': current_price,
+                    'priceDiff': 0,
+                    'cardType': '오류',
+                    'filterInfo': '처리실패',
+                    'searchKeyword': '처리실패',
+                    'validItemsCount': 0,
+                    'error': str(e)
+                })
+        
+        # 완료 로그
+        logging.info("\n" + "=" * 80)
+        logging.info("✅ 카드 최저가 검색 완료")
+        logging.info("=" * 80)
+        changed_count = sum(1 for r in results if r['priceDiff'] != 0)
+        logging.info(f"총 {len(results)}개 상품 처리 완료")
+        logging.info(f"가격 변경: {changed_count}개")
+        logging.info(f"변경 없음: {len(results) - changed_count}개\n")
+        
+        return Response({
+            'results': results,
+            'totalProcessed': len(results)
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        logging.error(f"가격 검색 중 오류 발생: {str(e)}")
+        return Response({'error': f'Failed to search prices: {str(e)}'}, 
+                       status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-
-# 엑셀 수량, 가격 수정
-logger = logging.getLogger(__name__)
 
 @csrf_exempt
 @require_http_methods(["POST"])
-def update_excel_file(request):
+def download_excel(request):
+    """
+    Download modified Excel file with updated prices and stock
+    추가 정보: A~F열에 변동액, 기존가격, 카드타입, 필터적용, 검색개수, 검색어 추가
+    가격 변동에 따라 색상 적용
+    
+    Request body (JSON):
+    {
+        "modifications": [
+            {
+                "excelRow": int,
+                "price": float,
+                "stock": int,
+                "productName": "string" (optional, for logging)
+            },
+            ...
+        ]
+    }
+    
+    File upload (multipart/form-data):
+    - "excel_file": Excel file (.xlsx)
+    """
     temp_file_path = None
     output_temp_path = None
     
     try:
-        # 1. 요청 데이터 검증 및 파싱
-        excel_file = request.FILES.get('excel_file')
-        modifications_json = request.POST.get('modifications')
-        original_filename = request.POST.get('original_filename', 'modified.xlsx')
-        
-        if not excel_file or not modifications_json:
-            return JsonResponse({'error': 'Missing required data'}, status=400)
-        
-        modifications = json.loads(modifications_json)
-        
+        # 1. 로깅 설정
         logger.info("=" * 50)
         logger.info("Excel 파일 처리 시작")
         logger.info("=" * 50)
-        logger.info(f"원본 파일명: {original_filename}")
-        logger.info(f"원본 파일 크기: {excel_file.size} bytes")
-        logger.info(f"수신된 수정 항목 개수: {len(modifications)}")
         
-        # 2. 임시 파일로 저장
+        # 2. 요청 데이터 파싱
+        if 'excel_file' not in request.FILES:
+            return JsonResponse({'error': '파일이 제공되지 않았습니다'}, status=400)
+        
+        excel_file = request.FILES['excel_file']
+        original_filename = excel_file.name
+        logger.info(f"업로드된 파일: {original_filename}")
+        logger.info(f"파일 크기: {excel_file.size} bytes")
+        
+        # modifications 데이터 파싱
+        try:
+            modifications_json = request.POST.get('modifications')
+            if not modifications_json:
+                return JsonResponse({'error': 'modifications 데이터가 없습니다'}, status=400)
+            
+            modifications = json.loads(modifications_json)
+            logger.info(f"수정 항목 개수: {len(modifications)}")
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON 파싱 오류: {str(e)}")
+            return JsonResponse({'error': 'modifications JSON 파싱 실패'}, status=400)
+        
+        # 3. 임시 파일 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as temp_file:
             temp_file_path = temp_file.name
             for chunk in excel_file.chunks():
@@ -621,144 +755,116 @@ def update_excel_file(request):
         
         logger.info(f"임시 파일 생성: {temp_file_path}")
         
-        # 3. 워크북 로드
+        # 4. 엑셀 파일 로드
         try:
-            workbook = openpyxl.load_workbook(temp_file_path, data_only=False)
+            workbook = openpyxl.load_workbook(temp_file_path)
             worksheet = workbook.worksheets[0]
-            logger.info(f"워크북 로드 성공. 시트명: {worksheet.title}")
+            logger.info(f"워크북 로드 성공")
         except Exception as e:
             logger.error(f"워크북 로드 실패: {str(e)}")
-            return JsonResponse({'error': f'Excel 파일을 읽을 수 없습니다: {str(e)}'}, status=400)
+            raise e
         
-        # 4. 워크시트 범위 정보 확인 및 확장
-        actual_max_row = worksheet.max_row
-        actual_max_col = worksheet.max_column
-        max_requested_row = max(int(mod['excelRow']) for mod in modifications) if modifications else 0
+        # 5. 기존 워크시트를 읽어서 새 워크북에 A~F열 추가하여 재구성
+        new_workbook = openpyxl.Workbook()
+        new_worksheet = new_workbook.active
         
-        logger.info(f"워크시트 정보:")
-        logger.info(f"  - openpyxl 감지 최대 행: {actual_max_row}")
-        logger.info(f"  - openpyxl 감지 최대 열: {actual_max_col}")
-        logger.info(f"  - 요청된 최대 행: {max_requested_row}")
-        logger.info(f"  - 계산된 범위: {worksheet.calculate_dimension()}")
-        
-        # 5. 워크시트 범위 강제 확장 (row 5가 비어있는 문제 해결)
-        if max_requested_row > actual_max_row:
-            logger.info(f"워크시트 범위 강제 확장: {actual_max_row} → {max_requested_row}")
-            # 마지막 행에 빈 값 설정으로 범위 확장
-            worksheet.cell(row=max_requested_row, column=actual_max_col).value = ""
-            logger.info(f"확장 후 범위: {worksheet.calculate_dimension()}")
-        
-        # 6. 원본 데이터 상태 확인 (디버깅)
         logger.info("=" * 30)
-        logger.info("원본 데이터 상태 확인 (1-10행)")
-        logger.info("=" * 30)
-        for row in range(1, 11):
-            d_val = worksheet.cell(row=row, column=4).value  # D열 (상품명)
-            f_val = worksheet.cell(row=row, column=6).value  # F열 (가격)
-            h_val = worksheet.cell(row=row, column=8).value  # H열 (재고)
-            logger.info(f"행 {row}: D='{d_val}' F='{f_val}' H='{h_val}'")
-        
-        # 7. 수정 작업 수행
-        logger.info("=" * 30)
-        logger.info("수정 작업 시작")
+        logger.info("새 워크시트 생성 - A~F열 추가")
         logger.info("=" * 30)
         
-        updated_count = 0
-        for i, mod in enumerate(modifications):
-            try:
-                row_num = int(mod['excelRow'])
-                price = mod['price']
-                stock = mod['stock']
-                product_name = mod.get('productName', 'Unknown')
-                
-                # 행 번호 유효성 검사
-                if not (1 <= row_num <= 1000000):
-                    logger.warning(f"잘못된 행 번호: {row_num}")
-                    continue
-                
-                logger.info(f"[{i+1}/{len(modifications)}] 처리 중...")
-                logger.info(f"  상품: {product_name}")
-                logger.info(f"  행: {row_num}")
-                logger.info(f"  새 가격: {price}")
-                logger.info(f"  새 재고: {stock}")
-                
-                # 수정 전 상태 확인
-                old_price = worksheet.cell(row=row_num, column=6).value
-                old_stock = worksheet.cell(row=row_num, column=8).value
-                logger.info(f"  기존 가격: {old_price}")
-                logger.info(f"  기존 재고: {old_stock}")
-                
-                # 주변 셀 데이터 확인 (A, D, G열 등)
-                a_val = worksheet.cell(row=row_num, column=1).value
-                d_val = worksheet.cell(row=row_num, column=4).value
-                g_val = worksheet.cell(row=row_num, column=7).value
-                logger.info(f"  주변 데이터: A='{a_val}' D='{d_val}' G='{g_val}'")
-                
-                # 가격 업데이트 (F열)
-                price_cell = worksheet.cell(row=row_num, column=6)
-                if price in ['', None]:
-                    price_cell.value = None
-                else:
-                    try:
-                        new_price = float(price)
-                        price_cell.value = new_price
-                        logger.info(f"  ✓ 가격 업데이트: {old_price} → {new_price}")
-                    except (ValueError, TypeError):
-                        price_cell.value = 0
-                        logger.warning(f"  ⚠ 가격 변환 실패, 0으로 설정: {price}")
-                
-                # 재고 업데이트 (H열)
-                stock_cell = worksheet.cell(row=row_num, column=8)
-                if stock in ['', None]:
-                    stock_cell.value = None
-                else:
-                    try:
-                        new_stock = int(float(stock))
-                        stock_cell.value = new_stock
-                        logger.info(f"  ✓ 재고 업데이트: {old_stock} → {new_stock}")
-                    except (ValueError, TypeError):
-                        stock_cell.value = 0
-                        logger.warning(f"  ⚠ 재고 변환 실패, 0으로 설정: {stock}")
-                
-                # 수정 후 주변 데이터 무결성 확인
-                after_a = worksheet.cell(row=row_num, column=1).value
-                after_d = worksheet.cell(row=row_num, column=4).value
-                after_g = worksheet.cell(row=row_num, column=7).value
-                
-                if after_a != a_val or after_d != d_val or after_g != g_val:
-                    logger.error(f"  ✗ 주변 데이터 변경 감지! A:{a_val}→{after_a}, D:{d_val}→{after_d}, G:{g_val}→{after_g}")
-                else:
-                    logger.info(f"  ✓ 주변 데이터 무결성 확인됨")
-                
-                updated_count += 1
-                
-            except Exception as e:
-                logger.error(f"항목 {i+1} 처리 중 오류: {str(e)}")
-                continue
+        # 6. modifications를 딕셔너리로 변환 (빠른 조회를 위해)
+        mod_dict = {int(mod['excelRow']): mod for mod in modifications}
         
-        logger.info(f"총 {updated_count}/{len(modifications)}개 항목 업데이트 완료")
+        # 7. 모든 행 처리
+        for row_idx, row in enumerate(worksheet.iter_rows(), 1):
+            new_row = []
+            price_info = None
+            
+            # 첫 번째 행 (헤더)
+            if row_idx == 1:
+                new_row.extend(["변동액", "기존가격", "카드타입", "필터적용", "검색개수", "검색어"])
+                # 기존 데이터 추가
+                for cell in row:
+                    new_row.append(cell.value)
+            else:
+                # 데이터 행 - 기본값 설정
+                new_row.extend([0, 0, "", "", 0, ""])
+                
+                # 수정 정보가 있는 경우
+                if row_idx in mod_dict:
+                    mod = mod_dict[row_idx]
+                    product_name = mod.get('productName', '')
+                    
+                    # D열(상품명)에서 원본 가격 가져오기
+                    original_price_cell = worksheet.cell(row=row_idx, column=6)  # F열
+                    original_price = float(original_price_cell.value) if original_price_cell.value else 0
+                    new_price = float(mod.get('price', original_price))
+                    price_diff = int(new_price - original_price)
+                    
+                    # 카드 정보 추출 (최저가 검색 시 저장된 정보)
+                    search_name, card_type, pokemon_info = CardGamePatternExtractor.extract_search_info(product_name)
+                    
+                    # A~F열 정보 설정
+                    new_row[0] = price_diff  # 변동액
+                    new_row[1] = int(original_price)  # 기존가격
+                    new_row[2] = card_type or "미확인"  # 카드타입
+                    new_row[3] = mod.get('filterInfo', "")  # 필터적용 (프론트에서 전달)
+                    new_row[4] = mod.get('validCount', 0)  # 검색개수 (프론트에서 전달)
+                    new_row[5] = search_name or ""  # 검색어
+                    
+                    price_info = (original_price, new_price)
+                    
+                    logger.info(f"행 {row_idx}: {product_name} | {int(original_price)} → {int(new_price)} ({price_diff:+}원)")
+                
+                # 기존 데이터 복사
+                for cell in row:
+                    # F열(가격) 또는 H열(재고)이고 수정 정보가 있으면 새 값 사용
+                    if row_idx in mod_dict:
+                        mod = mod_dict[row_idx]
+                        if cell.column == 6:  # F열 (가격)
+                            new_row.append(float(mod.get('price', cell.value or 0)))
+                        elif cell.column == 8:  # H열 (재고)
+                            new_row.append(int(float(mod.get('stock', cell.value or 0))))
+                        else:
+                            new_row.append(cell.value)
+                    else:
+                        new_row.append(cell.value)
+            
+            # 새 워크시트에 행 추가
+            new_worksheet.append(new_row)
+            
+            # 가격 셀에 색상 적용 (A~F 6개 컬럼 추가되어 F열이 12열로 이동)
+            if price_info is not None and row_idx > 1:
+                price_cell = new_worksheet.cell(row=row_idx, column=12)  # F열이 12열로 이동
+                fill_color = PriceProcessor.get_fill_color(price_info[0], price_info[1])
+                price_cell.fill = fill_color
         
-        # 8. 최종 검증
-        logger.info("=" * 30)
-        logger.info("최종 검증")
-        logger.info("=" * 30)
-        for mod in modifications[:3]:  # 처음 3개만 검증
-            row_num = int(mod['excelRow'])
-            final_price = worksheet.cell(row=row_num, column=6).value
-            final_stock = worksheet.cell(row=row_num, column=8).value
-            logger.info(f"행 {row_num}: F={final_price}, H={final_stock}")
+        # 8. 색상 범례 추가 (첫 번째 열의 2~5행)
+        color_legend = [
+            ("초록색", "1000원 이하", COLOR_FILLS['green']),
+            ("파랑색", "2000원 이하", COLOR_FILLS['blue']),
+            ("노랑색", "3000원 이하", COLOR_FILLS['yellow']),
+            ("빨강색", "3000원 초과", COLOR_FILLS['red'])
+        ]
+        
+        for i, (color_name, range_text, fill_color) in enumerate(color_legend, 2):
+            new_worksheet.cell(row=i, column=1, value=color_name).fill = fill_color
+            new_worksheet.cell(row=i, column=2, value=range_text)
+        
+        logger.info("색상 범례 추가 완료")
         
         # 9. 파일 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as output_temp:
             output_temp_path = output_temp.name
         
         try:
-            workbook.save(output_temp_path)
-            logger.info("워크북 저장 완료")
+            new_workbook.save(output_temp_path)
+            logger.info("새 워크북 저장 완료")
         except Exception as e:
             logger.error(f"워크북 저장 실패: {str(e)}")
             raise e
         finally:
+            new_workbook.close()
             workbook.close()
         
         # 10. 저장된 파일 검증
@@ -768,28 +874,12 @@ def update_excel_file(request):
         if output_size == 0:
             raise Exception("저장된 파일 크기가 0입니다")
         
-        # 11. 저장된 파일 재검증
-        try:
-            verify_workbook = openpyxl.load_workbook(output_temp_path, data_only=True)
-            verify_worksheet = verify_workbook.worksheets[0]
-            
-            logger.info("저장된 파일 재검증:")
-            for mod in modifications[:2]:
-                row_num = int(mod['excelRow'])
-                verify_price = verify_worksheet.cell(row=row_num, column=6).value
-                verify_stock = verify_worksheet.cell(row=row_num, column=8).value
-                logger.info(f"  행 {row_num}: F={verify_price}, H={verify_stock}")
-            
-            verify_workbook.close()
-        except Exception as e:
-            logger.error(f"파일 재검증 실패: {str(e)}")
-        
-        # 12. HTTP 응답 생성
+        # 11. HTTP 응답 생성
         with open(output_temp_path, 'rb') as f:
             file_content = f.read()
         
         base_name = original_filename.rsplit('.', 1)[0] if '.' in original_filename else original_filename
-        new_filename = f"{base_name}_modified.xlsx"
+        new_filename = f"{base_name}_수정.xlsx"
         
         response = HttpResponse(
             file_content,
@@ -803,6 +893,13 @@ def update_excel_file(request):
         logger.info("=" * 50)
         logger.info(f"파일명: {new_filename}")
         logger.info(f"응답 크기: {len(file_content)} bytes")
+        logger.info(f"\n추가된 정보:")
+        logger.info(f"   A열: 변동액 (정수)")
+        logger.info(f"   B열: 기존가격")
+        logger.info(f"   C열: 카드 타입")
+        logger.info(f"   D열: 필터 적용 여부")
+        logger.info(f"   E열: 검색된 상품 개수")
+        logger.info(f"   F열: 검색어")
         
         return response
         

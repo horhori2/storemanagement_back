@@ -4,7 +4,7 @@
 # python manage.py add_tcg_sets_data
 
 from datetime import date
-from cardStockManageApp.models import TCGGame, CardSet
+from cardStockManageApp.models import TCGGame, CardSet, Price
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
@@ -14,6 +14,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         """메인 실행 메서드"""
         self.stdout.write("TCG 게임 및 카드 세트 데이터 추가 시작...")
+
+        # sell_price가 None인 경우 0으로 설정
+        Price.objects.filter(sell_price__isnull=True).update(sell_price=0)
+        Price.objects.filter(buy_price__isnull=True).update(buy_price=0)
         
         with transaction.atomic():
             # 각 게임별 세트 추가
@@ -37,7 +41,18 @@ class Command(BaseCommand):
             pokemon = TCGGame.objects.get(name__icontains='pokemon')  # 영문명으로 검색
         
         pokemon_sets = [
-            # 최신 세트들
+            {
+                'set_code': 'm1L',
+                'name': 'Mega Brave',
+                'name_kr': '메가브레이브',
+                'release_date': date(2025, 9, 26)
+            },
+            {
+                'set_code': 'm1S',
+                'name': 'Mega Symphonia',
+                'name_kr': '메가심포니아',
+                'release_date': date(2025, 9, 26)
+            },
             {
                 'set_code': 'sv11B',
                 'name': 'Black Bolt',
@@ -358,7 +373,186 @@ class Command(BaseCommand):
                 'name': 'Xros Encounter',
                 'name_kr': '크로스 인카운터',
                 'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'BTK-10',
+                'name': 'Xros Encounter',
+                'name_kr': '크로스 인카운터',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'BTK-09',
+                'name': 'X Record',
+                'name_kr': 'X레코드',
+                'release_date': date(2024, 6, 21)
+            },{
+                'set_code': 'EXK-02',
+                'name': 'Digital Hazard',
+                'name_kr': '디지털 해저드',
+                'release_date': date(2024, 6, 21)
             }
+            ,{
+                'set_code': 'BTK-08',
+                'name': 'New Hero',
+                'name_kr': '뉴 히어로',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'BTK-07',
+                'name': 'Next Adventure',
+                'name_kr': '넥스트 어드벤처',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'EXK-01',
+                'name': 'Classic Collection',
+                'name_kr': '클래식 컬렉션',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'BTK-06',
+                'name': 'Double Diamond',
+                'name_kr': '더블 다이아몬드',
+                'release_date': date(2024, 6, 21)
+            },
+             {
+                'set_code': 'BTK-05',
+                'name': 'Battle Of Omni',
+                'name_kr': '배틀 오브 오메가',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'BTK-04',
+                'name': 'Great Legend',
+                'name_kr': '그레이트 레전드',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'BTK-1.5',
+                'name': 'Special Booster Version 1.5',
+                'name_kr': '스페셜 부스터 버전 1.5',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'BTK-1.0',
+                'name': 'Special Booster Version 1.0',
+                'name_kr': '스페셜 부스터 버전 1.0',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-19',
+                'name': 'Fable Waltz',
+                'name_kr': '동화의 무도',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-18',
+                'name': 'Guardian Vortex',
+                'name_kr': '선풍의 수호자',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-17',
+                'name': 'Double Typhoon',
+                'name_kr': '어드밴스 덱 더블 타이푼',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-16',
+                'name': 'Wolf Of Friendship',
+                'name_kr': '우정의 강랑',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-15',
+                'name': 'Dragon Of Courage',
+                'name_kr': '용기의 전룡',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-14',
+                'name': 'Beelzemon',
+                'name_kr': '어드밴스 덱 베르제브몬',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-13',
+                'name': 'Ragnaloardmon',
+                'name_kr': '라그나로드몬',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-12',
+                'name': 'Jesmon',
+                'name_kr': '제스몬',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-10',
+                'name': 'Parallel World Tactician',
+                'name_kr': '이세계의 군사',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-09',
+                'name': 'Ultimate Ancient Dragon',
+                'name_kr': '궁극의 고대용',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-08',
+                'name': 'Ulforceveedramon',
+                'name_kr': '알포스브이드라몬',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-07',
+                'name': 'Gallantmon',
+                'name_kr': '듀크몬',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-06',
+                'name': 'Venom Violet',
+                'name_kr': '베놈 바이올렛',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-05',
+                'name': 'Mugen Black',
+                'name_kr': '파워 블랙',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-04',
+                'name': 'Giga Green',
+                'name_kr': '기가 그린',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-03',
+                'name': 'Heaven\'s Yellow',
+                'name_kr': '헤븐즈 옐로',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-02',
+                'name': 'Cocytus Blue',
+                'name_kr': '코큐토스 블루',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'STK-01',
+                'name': 'Gaia Red',
+                'name_kr': '가이아 레드',
+                'release_date': date(2024, 6, 21)
+            },
+            {
+                'set_code': 'PROMO',
+                'name': 'PROMO',
+                'name_kr': '프로모션',
+                'release_date': date(2024, 6, 21)
+            },
         ]
         
         for set_data in digimon_sets:

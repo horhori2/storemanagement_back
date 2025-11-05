@@ -3,7 +3,7 @@
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from cardStockManageApp.models import TCGGame, Rarity
+from cardStockManageApp.models import TCGGame, Rarity, Price
 
 class Command(BaseCommand):
     help = 'Load initial data for TCG store'
@@ -11,6 +11,10 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS('Starting initial data load...'))
+
+        # sell_price가 None인 경우 0으로 설정
+        Price.objects.filter(sell_price__isnull=True).update(sell_price=0)
+        Price.objects.filter(buy_price__isnull=True).update(buy_price=0)
         
         # 1. TCG 게임 생성
         games_data = [

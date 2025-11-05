@@ -66,19 +66,35 @@ class InventorySerializer(serializers.ModelSerializer):
 
 
 class CardVersionListSerializer(serializers.ModelSerializer):
-    """카드 버전 리스트용"""
-    card_info = CardSimpleSerializer(source='card', read_only=True)
+    """카드 버전 리스트용 (세트 카드 목록에서 사용)"""
+    # 카드 기본 정보
+    id = serializers.IntegerField(source='card.id')
+    card_number = serializers.CharField(source='card.card_number')
+    name = serializers.CharField(source='card.name')
+    name_kr = serializers.CharField(source='card.name_kr')
+    image_url = serializers.URLField(source='card.image_url')
+    
+    # 희귀도 정보
     rarity_code = serializers.CharField(source='rarity.rarity_code', read_only=True)
-    price = PriceSerializer(read_only=True)
-    inventory = InventorySerializer(read_only=True)
-    full_name = serializers.CharField(read_only=True)
+    rarity_name = serializers.CharField(source='rarity.rarity_name_kr', read_only=True)
+    
+    # 가격 및 재고 정보
+    price = serializers.DecimalField(source='price.current_price', max_digits=10, decimal_places=0, read_only=True)
+    stock = serializers.IntegerField(source='inventory.available_quantity', read_only=True)
+    
+    # 게임 및 세트 정보
+    game_name = serializers.CharField(source='card.game.name_kr', read_only=True)
+    set_name = serializers.CharField(source='card.set.name_kr', read_only=True)
+    set_code = serializers.CharField(source='card.set.set_code', read_only=True)
     
     class Meta:
         model = CardVersion
-        fields = ['id', 'card_info', 'rarity_code', 'version_code', 'version_name',
-                  'display_code', 'full_name', 'image_url_small', 'is_foil', 
-                  'is_promo', 'price', 'inventory']
-
+        fields = [
+            'id', 'card_number', 'name', 'name_kr', 'image_url',
+            'rarity_code', 'rarity_name', 'price', 'stock',
+            'game_name', 'set_name', 'set_code',
+            'version_code', 'display_code', 'is_foil', 'is_promo'
+        ]
 
 class CardVersionDetailSerializer(serializers.ModelSerializer):
     """카드 버전 상세 정보"""

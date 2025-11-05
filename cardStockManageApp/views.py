@@ -274,19 +274,21 @@ class GameSetsView(ListAPIView):
 
 
 class SetCardsView(ListAPIView):
-    """특정 세트의 카드 목록"""
-    serializer_class = CardSimpleSerializer
+    """특정 세트의 카드 버전 목록 (희귀도 포함)"""
+    serializer_class = CardVersionListSerializer  # CardSimpleSerializer에서 변경
     permission_classes = [AllowAny]
     filter_backends = [SearchFilter, OrderingFilter]
-    search_fields = ['name', 'name_kr', 'card_number']
-    ordering_fields = ['card_number', 'name']
-    ordering = ['card_number']
+    search_fields = ['card__name', 'card__name_kr', 'card__card_number']
+    ordering_fields = ['card__card_number', 'card__name']
+    ordering = ['card__card_number']
     
     def get_queryset(self):
         set_code = self.kwargs['set_code']
-        return Card.objects.filter(
-            set__set_code=set_code
-        ).select_related('game', 'set')
+        return CardVersion.objects.filter(
+            card__set__set_code=set_code
+        ).select_related(
+            'card', 'card__game', 'card__set', 'rarity', 'price', 'inventory'
+        ).prefetch_related('aliases')
 
 
 # TCGGameViewSet에 추가 action

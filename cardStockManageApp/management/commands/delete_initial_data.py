@@ -3,7 +3,7 @@
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from cardStockManageApp.models import TCGGame, Rarity
+from cardStockManageApp.models import TCGGame, Rarity, Price
 
 class Command(BaseCommand):
     help = 'Delete initial data for TCG store'
@@ -11,6 +11,10 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         self.stdout.write(self.style.WARNING('Starting initial data deletion...'))
+
+        # sell_price가 None인 경우 0으로 설정
+        Price.objects.filter(sell_price__isnull=True).update(sell_price=0)
+        Price.objects.filter(buy_price__isnull=True).update(buy_price=0)
         
         # 확인 메시지
         confirm = input("Are you sure you want to delete all initial data? Type 'yes' to continue: ")
@@ -68,7 +72,7 @@ class Command(BaseCommand):
         
         # TCG 게임 삭제
         deleted_games = 0
-        game_names = ['Pokemon', 'One Piece', 'Digimon']
+        game_names = ['Pokemon', 'OnePiece', 'Digimon']
         
         for name in game_names:
             try:

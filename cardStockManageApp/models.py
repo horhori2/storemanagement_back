@@ -79,7 +79,8 @@ class Rarity(models.Model):
 class Card(models.Model):
     game = models.ForeignKey(TCGGame, on_delete=models.CASCADE, related_name='cards')
     set = models.ForeignKey(CardSet, on_delete=models.CASCADE, related_name='cards')
-    card_number = models.CharField(max_length=30)
+    card_number = models.CharField(max_length=30)  # 기존: OP01-001
+    data_number = models.CharField(max_length=50, null=True, blank=True)  # 신규: 고유 식별자
     name = models.CharField(max_length=200)
     name_kr = models.CharField(max_length=200, blank=True, null=True)
     name_jp = models.CharField(max_length=200, blank=True, null=True)
@@ -91,7 +92,13 @@ class Card(models.Model):
         db_table = 'cards'
         verbose_name = 'Card'
         verbose_name_plural = 'Cards'
-        unique_together = ['game', 'set', 'card_number']
+        constraints = [
+           models.UniqueConstraint(
+               fields=['game', 'set', 'data_number'],
+               condition=models.Q(data_number__isnull=False),
+               name='unique_card_with_data_number'
+           )
+       ]
         ordering = ['set', 'card_number']
         indexes = [
             models.Index(fields=['name']),
@@ -234,7 +241,8 @@ class Price(models.Model):
     card_version = models.OneToOneField(CardVersion, on_delete=models.CASCADE, related_name='price')
     
     buy_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
-    sell_price = models.DecimalField(max_digits=10, decimal_places=0)
+    # 기본값을 0으로 설정하여 None 방지
+    sell_price = models.DecimalField(max_digits=10, decimal_places=0, default=0)
     
     special_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
     special_price_start_date = models.DateTimeField(null=True, blank=True)
@@ -245,6 +253,8 @@ class Price(models.Model):
     is_negotiable = models.BooleanField(default=False)  # 이미 default=False가 있음
     
     updated_at = models.DateTimeField(auto_now=True)
+
+    
     
     class Meta:
         db_table = 'prices'
@@ -262,19 +272,22 @@ class Price(models.Model):
     def current_price(self):
         """현재 적용 가격 (세일 가격 우선)"""
         now = timezone.now()
-        if all([
-            self.special_price,
-            self.special_price_start_date,
-            self.special_price_end_date,
-            self.special_price_start_date <= now <= self.special_price_end_date
-        ]):
-            return self.special_price
+        
+        # 특가 정보가 모두 있을 때만 비교
+        if (self.special_price is not None and 
+            self.special_price_start_date is not None and 
+            self.special_price_end_date is not None):
+            
+            # 특가 기간 내인지 확인
+            if self.special_price_start_date <= now <= self.special_price_end_date:
+                return self.special_price
+        
         return self.sell_price
-    
+
     @property
     def discount_percentage(self):
         """할인율"""
-        if self.current_price < self.sell_price:
+        if self.current_price and self.sell_price and self.current_price < self.sell_price:
             return int((1 - self.current_price / self.sell_price) * 100)
         return 0
 
@@ -348,17 +361,22 @@ class PriceHistory(models.Model):
 
 
 # 10. 일별 가격 히스토리 모델 (그래프용)
+# 기존 DailyPriceHistory 모델 수정 (방법 2)
 class DailyPriceHistory(models.Model):
     card_version = models.ForeignKey(CardVersion, on_delete=models.CASCADE, related_name='daily_prices')
     date = models.DateField()
     
+    # 그래프용 최저가 필드 (네이버 쇼핑 등에서 검색한 최저가)
+    online_lowest_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
+    
+    # 기존 필드들은 선택사항으로 유지 (다른 용도로 활용 가능)
     avg_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
     min_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
     max_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
     closing_price = models.DecimalField(max_digits=10, decimal_places=0, null=True, blank=True)
     
-    sales_count = models.IntegerField(default=0)  # DEFAULT 0 추가
-    total_quantity = models.IntegerField(default=0)  # DEFAULT 0 추가
+    sales_count = models.IntegerField(default=0)
+    total_quantity = models.IntegerField(default=0)
     
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -374,8 +392,7 @@ class DailyPriceHistory(models.Model):
         ]
     
     def __str__(self):
-        return f"{self.card_version} - {self.date}"
-
+        return f"{self.card_version} - {self.date}: {self.online_lowest_price}원"
 
 # 11. 카드 버전 별칭 모델 (검색 최적화)
 class CardVersionAlias(models.Model):
@@ -476,5 +493,8 @@ def create_inventory_and_price(sender, instance, created, **kwargs):
         Inventory.objects.get_or_create(card_version=instance)
         Price.objects.get_or_create(
             card_version=instance,
-            defaults={'sell_price': 0}
+            defaults={
+                'sell_price': 0,  # 기본 판매가격 0
+                'buy_price': 0,   # 기본 매입가격 0
+            }
         )
