@@ -35,7 +35,7 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 # 기본값 설정
 if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['']:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
-
+print(ALLOWED_HOSTS)
 
 # Application definition
 
