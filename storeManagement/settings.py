@@ -12,6 +12,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 from . import local_setting
+from dotenv import load_dotenv
+
+load_dotenv()
 
 SECRET_KEY = local_setting.SECRET_KEY
 DATABASES = local_setting.DATABASES
@@ -24,9 +27,13 @@ DATABASES = local_setting.DATABASES
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
+
+# 기본값 설정
+if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['']:
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
 # Application definition
