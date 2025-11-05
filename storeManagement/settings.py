@@ -20,8 +20,6 @@ SECRET_KEY = local_setting.SECRET_KEY
 DATABASES = local_setting.DATABASES
 
 
-
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
