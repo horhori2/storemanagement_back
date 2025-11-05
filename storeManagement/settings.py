@@ -33,7 +33,6 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 # 기본값 설정
 if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['']:
     ALLOWED_HOSTS = ['localhost', '127.0.0.1']
-print(ALLOWED_HOSTS)
 
 # Application definition
 
@@ -145,12 +144,16 @@ REST_FRAMEWORK = {
     ],
 }
 
-CORS_ALLOWED_ORIGINS = [
-    "https://example.com",
-    "https://sub.example.com",
-    "http://localhost:8080",
-    "http://localhost:3000",
-]
+if DEBUG:
+    # 개발 환경
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    # 프로덕션 환경
+    CORS_ALLOWED_ORIGINS = [
+        "http://16.176.206.240:3000",
+        "https://yourdomain.com",
+    ]
+    CORS_ALLOW_CREDENTIALS = True
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
