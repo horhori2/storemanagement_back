@@ -18,6 +18,7 @@ drf-yasg==1.21.10
 et_xmlfile==2.0.0
 Flask==3.1.1
 # Editable install with no version control (flaskr==1.0.0)
+-e c:\users\asus\desktop\°³¹ß\flask\projects\flask-tutorial
 h11==0.16.0
 idna==3.10
 image==1.5.33

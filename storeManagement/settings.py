@@ -24,9 +24,9 @@ DATABASES = local_setting.DATABASES
 
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['16.176.206.240', 'localhost', '127.0.0.1']
 
 
 # Application definition
