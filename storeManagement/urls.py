@@ -1,7 +1,6 @@
 from django.contrib import admin
 from django.urls import include, path
-from minimumPriceApp.views import upload_excel, search_prices, download_excel
-# from cardStockManageApp.views import TCGGameViewSet, CardSetViewSet, CardViewSet, CardVersionViewSet, InventoryViewSet, SaleViewSet
+from minimumPriceApp.views import upload_excel, search_prices, download_excel, get_job_progress
 from rest_framework import routers
 from rest_framework.routers import DefaultRouter
 from drf_yasg import openapi
@@ -34,18 +33,28 @@ urlpatterns = [
     # path('api/', include('rest_framework.urls')),
     # path('api/', include(router.urls)),
     
+    # # Excel 파일 업로드 및 데이터 추출
+    # path('api/upload-excel/', upload_excel, name='upload_excel'),
+    
+    # # 가격 검색 (네이버 쇼핑 API)
+    # path('api/search-prices/', search_prices, name='search_prices'),
+    
+    # # Excel 파일 다운로드 (가격/재고 업데이트 반영)
+    # path('api/download-excel/', download_excel, name='download_excel'),
+    
+    # # Swagger/ReDoc 문서
+    # path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
+    # path('api/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
+
     # Excel 파일 업로드 및 데이터 추출
     path('api/upload-excel/', upload_excel, name='upload_excel'),
     
-    # 가격 검색 (네이버 쇼핑 API)
+    # 최저가 검색 (비동기)
     path('api/search-prices/', search_prices, name='search_prices'),
     
-    # Excel 파일 다운로드 (가격/재고 업데이트 반영)
-    path('api/download-excel/', download_excel, name='download_excel'),
+    # 진행 상황 조회
+    path('api/progress/<str:job_id>/', get_job_progress, name='get_job_progress'),
     
-    # Swagger/ReDoc 문서
-    path('api/docs/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
-    path('api/redoc/', schema_view.with_ui('redoc', cache_timeout=0), name='schema-redoc'),
-
-    path('', include('cardStockManageApp.urls')),  # 앱 이름으로 변경
+    # 수정된 파일 다운로드
+    path('api/download-excel/', download_excel, name='download_excel'),
 ]

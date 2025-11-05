@@ -42,7 +42,6 @@ INSTALLED_APPS = [
     'django_filters',  # 응답 JSON
     'corsheaders',
     'minimumPriceApp',
-    'cardStockManageApp',
 ]
 
 MIDDLEWARE = [

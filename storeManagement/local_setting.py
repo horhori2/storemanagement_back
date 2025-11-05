@@ -8,13 +8,22 @@ SECRET_KEY = 'django-insecure-7k1!_mroo-p!$0&fqe7234i%v)7!9ikrq@r37door#qc9a3j#v
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 # MYSQL
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': 'test',
+#         'USER': 'root',
+#         'PASSWORD': '1234',
+#         'host' : 'localhost',
+#         'port' : '3306'
+#     }
+# }
+
+# SQLite
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'test',
-        'USER': 'root',
-        'PASSWORD': '1234',
-        'host' : 'localhost',
-        'port' : '3306'
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': 'db.sqlite3',
     }
 }
