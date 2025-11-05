@@ -26,7 +26,9 @@ DATABASES = local_setting.DATABASES
 
 # SECURITY WARNING: don't run with debug turned on in production!
 
-DEBUG = os.environ.get('DEBUG', 'False') == 'True'
+DEBUG = os.environ.get('DEBUG', 'True') == 'True'
+
+print(DEBUG)
 
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 
@@ -146,7 +148,12 @@ REST_FRAMEWORK = {
 
 if DEBUG:
     # 개발 환경
-    CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOWED_ORIGINS = [
+        "https://example.com",
+        "https://sub.example.com",
+        "http://localhost:8080",
+        "http://localhost:3000",
+    ]   
 else:
     # 프로덕션 환경
     CORS_ALLOWED_ORIGINS = [
