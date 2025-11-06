@@ -28,8 +28,6 @@ DATABASES = local_setting.DATABASES
 
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
 
-print(DEBUG)
-
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 
 # 기본값 설정

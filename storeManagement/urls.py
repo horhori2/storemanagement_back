@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import include, path
-from minimumPriceApp.views import upload_excel, search_prices, download_excel, get_job_progress
+# from minimumPriceApp.views import upload_excel, search_prices, download_excel, get_job_progress
+from minimumPriceApp.views import upload_excel, search_prices, download_excel
 from rest_framework import routers
 from rest_framework.routers import DefaultRouter
 from drf_yasg import openapi
@@ -53,7 +54,7 @@ urlpatterns = [
     path('api/search-prices/', search_prices, name='search_prices'),
     
     # 진행 상황 조회
-    path('api/progress/<str:job_id>/', get_job_progress, name='get_job_progress'),
+    # path('api/progress/<str:job_id>/', get_job_progress, name='get_job_progress'),
     
     # 수정된 파일 다운로드
     path('api/download-excel/', download_excel, name='download_excel'),
