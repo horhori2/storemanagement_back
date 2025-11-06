@@ -160,6 +160,32 @@ else:
     ]
     CORS_ALLOW_CREDENTIALS = True
 
+# 자격 증명 허용 (쿠키, 인증 헤더 등)
+CORS_ALLOW_CREDENTIALS = True
+
+# 허용할 HTTP 메서드
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# 허용할 HTTP 헤더
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # 콘솔창에서 SQL 쿼리 보기
