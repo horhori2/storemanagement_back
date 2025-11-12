@@ -152,22 +152,16 @@ class CardGamePatternExtractor:
     @staticmethod
     def extract_digimon_info(product_name):
         """Extract Digimon card search information"""
-        parts = product_name.split("/")
-        
-        if not parts or not parts[-1].strip().startswith("디지몬"):
+        # 새로운 형식: "디지몬카드"로 시작하는지 확인
+        if not product_name.startswith("디지몬카드"):
             return None
         
         # 희소/패러렐 여부 확인
-        has_rare = any("희소" in part for part in parts)
-        has_parallel = any("패러렐" in part for part in parts)
-        
-        if len(parts) < 2:
-            return None
-        
-        code_part = parts[-2].strip()
+        has_rare = "희소" in product_name
+        has_parallel = "패러렐" in product_name
         
         # 일반 카드 패턴
-        card_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{2,3}', code_part)
+        card_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{2,3}', product_name)
         if card_match:
             card_number = card_match.group()
             
@@ -188,7 +182,7 @@ class CardGamePatternExtractor:
             return result.strip()
         
         # 프로모 카드 패턴
-        promo_match = re.search(r'P-\d{3}', code_part)
+        promo_match = re.search(r'P-\d{3}', product_name)
         if promo_match:
             card_number = promo_match.group()
             prefix = "희소 " if has_rare else ("패러렐 " if has_parallel else "")
