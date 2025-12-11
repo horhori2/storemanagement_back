@@ -155,7 +155,7 @@ if DEBUG:
 else:
     # 프로덕션 환경
     CORS_ALLOWED_ORIGINS = [
-        "http://3.106.115.141:3000",
+        "http://43.202.4.217:3000",
         "https://yourdomain.com",
     ]
     CORS_ALLOW_CREDENTIALS = True
