@@ -77,6 +77,15 @@ class CardGamePatternExtractor:
     @staticmethod
     def extract_onepiece_info(product_name):
         """Extract One Piece card search information"""
+        # 망가(슈퍼 패러렐) 패턴 체크 - 최우선 처리
+        if "망가" in product_name:
+            card_match = re.search(r'(OP|EB|ST)\d{2}-\d{3}', product_name)
+            if card_match:
+                card_number = card_match.group()
+                return f"망가 {card_number}"
+            else:
+                return None
+        
         # SP- 패턴 체크 (모두 스페셜 카드로 처리)
         sp_pattern = re.search(r'\bSP-(SP|SEC|R|SR|C|L|U|UC)\b', product_name)
         if sp_pattern:
@@ -302,6 +311,7 @@ class ItemFilter:
     @staticmethod
     def check_item_filters(title, mall_name, card_type, card_number,
                           is_parallel, is_rare, is_special_day, is_special,
+                          is_super_parallel, price,
                           required_rarity, required_pokemon_name):
         """아이템 필터링 체크 (통과 여부와 로그 메시지 반환)"""
         
@@ -318,8 +328,34 @@ class ItemFilter:
             if card_number not in title:
                 return False, f"❌ 제외: 카드번호 '{card_number}' 불일치"
         
+        # 원피스 슈퍼 패러렐(망가) 키워드 확인
+        if card_type == "원피스" and is_super_parallel:
+            super_parallel_keywords = ['슈퍼 패러렐', '슈퍼패러렐', '슈퍼파라렐', '슈퍼 파라렐']
+            manga_keywords = ['망가', 'MANGA', 'manga']
+            
+            # 슈퍼 패러렐 키워드 확인
+            has_super_parallel = any(kw in title for kw in super_parallel_keywords)
+            # 망가 키워드 확인
+            has_manga = any(kw in title for kw in manga_keywords)
+            
+            # 두 키워드 중 하나라도 포함되어야 함
+            if not (has_super_parallel or has_manga):
+                return False, "❌ 제외: 슈퍼 패러렐 또는 망가 키워드 없음"
+            
+            # 가격 체크: 200,000원 미만 제외
+            if price < 200000:
+                return False, f"❌ 제외: 가격 {int(price)}원 (20만원 미만)"
+            
+            matched_keywords = []
+            if has_super_parallel:
+                matched_keywords.append("슈퍼 패러렐")
+            if has_manga:
+                matched_keywords.append("망가")
+            
+            logging.info(f"✅ 슈퍼 패러렐(망가) 키워드 매칭 성공 ({', '.join(matched_keywords)}) (가격: {int(price)}원)")
+        
         # 원피스 스페셜 키워드 확인
-        if card_type == "원피스" and is_special:
+        elif card_type == "원피스" and is_special:
             special_keywords = ['스페셜', 'SP']
             matched_keyword = next((kw for kw in special_keywords if kw in title), None)
             if not matched_keyword:
@@ -382,14 +418,17 @@ class ItemFilter:
         filter_match_info = "없음"
         
         # 검색 조건 설정
-        is_parallel = "패러렐" in search_name
+        is_super_parallel = "망가" in search_name  # 망가 키워드로 체크
+        is_parallel = "패러렐" in search_name and not is_super_parallel
         is_rare = "희소" in search_name
         is_special_day = "특일" in search_name
-        is_special = "SP" in search_name
+        is_special = "SP" in search_name and not is_super_parallel
         
         # 카드별 기본 필터 정보
         if card_type == "원피스":
-            if is_special:
+            if is_super_parallel:
+                filter_match_info = "슈퍼패러렐(망가)검색"
+            elif is_special:
                 filter_match_info = "스페셜검색"
             elif is_parallel:
                 filter_match_info = "패러렐검색"
@@ -420,6 +459,7 @@ class ItemFilter:
             passed, log_msg = ItemFilter.check_item_filters(
                 title, mall_name, card_type, card_number,
                 is_parallel, is_rare, is_special_day, is_special,
+                is_super_parallel, price,
                 required_rarity, required_pokemon_name
             )
             
@@ -892,6 +932,9 @@ def download_excel(request):
         logger.info(f"   B열: 기존가격")
         logger.info(f"   C열: 카드 타입")
         logger.info(f"   D열: 필터 적용 여부")
+        logger.info(f"        - 원피스: 일반검색/패러렐검색/스페셜검색/슈퍼패러렐(망가)검색")
+        logger.info(f"        - 디지몬: 일반검색/희소검색/패러렐검색")
+        logger.info(f"        - 포켓몬: 포켓몬명만/포켓몬명+레어도/레어도만/필터없음")
         logger.info(f"   E열: 검색된 상품 개수")
         logger.info(f"   F열: 검색어")
         
