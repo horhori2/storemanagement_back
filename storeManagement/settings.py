@@ -32,7 +32,13 @@ ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',')
 
 # 기본값 설정
 if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['']:
-    ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+    ALLOWED_HOSTS = ['localhost', '127.0.0.1', '192.168.0.13']
+
+# DEBUG 모드일 때 추가 호스트 허용
+if DEBUG:
+    ALLOWED_HOSTS.extend(['localhost', '127.0.0.1', '192.168.0.13', '*'])
+    # '*'는 모든 호스트 허용 (개발용만!)
+    # 또는 ALLOWED_HOSTS = ['*']  # 개발 중에는 모든 호스트 허용
 
 # Application definition
 
@@ -144,21 +150,25 @@ REST_FRAMEWORK = {
     ],
 }
 
+# ==================== CORS 설정 (수정됨) ====================
 if DEBUG:
-    # 개발 환경
-    CORS_ALLOWED_ORIGINS = [
-        "https://example.com",
-        "https://sub.example.com",
-        "http://localhost:8080",
-        "http://localhost:3000",
-    ]   
+    # 개발 환경 - 모든 로컬 주소 허용
+    CORS_ALLOW_ALL_ORIGINS = True  # 개발 중에는 모든 오리진 허용
+
+    # 또는 특정 IP만 허용하려면:
+    # CORS_ALLOWED_ORIGINS = [
+    #     "http://localhost:3000",
+    #     "http://127.0.0.1:3000",
+    #     "http://192.168.0.13:3000",  # 로컬 네트워크 IP
+    #     "http://localhost:8080",
+    #     "http://127.0.0.1:8080",
+    # ]   
 else:
     # 프로덕션 환경
     CORS_ALLOWED_ORIGINS = [
         "http://43.202.4.217:3000",
         "https://yourdomain.com",
     ]
-    CORS_ALLOW_CREDENTIALS = True
 
 # 자격 증명 허용 (쿠키, 인증 헤더 등)
 CORS_ALLOW_CREDENTIALS = True
