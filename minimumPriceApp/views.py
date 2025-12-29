@@ -43,14 +43,16 @@ COLOR_FILLS = {
     'green': PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid"),
     'blue': PatternFill(start_color="0000FF", end_color="0000FF", fill_type="solid"),
     'yellow': PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid"),
-    'red': PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid")
+    'red': PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid"),
+    'purple': PatternFill(start_color="800080", end_color="800080", fill_type="solid")  # TCG999 없음용
 }
 
 COLOR_LEGEND = [
     ("초록색", "1000원 이하", COLOR_FILLS['green']),
     ("파랑색", "2000원 이하", COLOR_FILLS['blue']),
     ("노랑색", "3000원 이하", COLOR_FILLS['yellow']),
-    ("빨강색", "3000원 초과 또는 TCG999 없음", COLOR_FILLS['red'])
+    ("빨강색", "3000원 초과", COLOR_FILLS['red']),
+    ("보라색", "TCG999 없음", COLOR_FILLS['purple'])
 ]
 
 
@@ -845,9 +847,9 @@ def download_excel(request):
             if price_info is not None and row_idx > 1:
                 price_cell = new_worksheet.cell(row=row_idx, column=12)  # F열이 12열로 이동
                 
-                # TCG999 없는 포켓몬카드는 빨간색
+                # TCG999 없는 포켓몬카드는 보라색
                 if price_info[2]:  # tcg999_not_found
-                    price_cell.fill = COLOR_FILLS['red']
+                    price_cell.fill = COLOR_FILLS['purple']
                 else:
                     fill_color = PriceProcessor.get_fill_color(price_info[0], price_info[1])
                     price_cell.fill = fill_color
