@@ -1,7 +1,6 @@
 """
 Django REST API for Excel file processing with Naver Shopping API price search
 Supports card game price search and update functionality
-WITH PROGRESS TRACKING
 """
 
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -12,7 +11,6 @@ from rest_framework import status, serializers
 import pandas as pd
 import numpy as np
 from django.http import HttpResponse, JsonResponse
-from django.core.cache import cache
 from io import BytesIO
 import os
 import urllib.request
@@ -27,8 +25,6 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 import tempfile
 from openpyxl.utils import get_column_letter
-import threading
-import uuid
 
 # API Configuration
 NAVER_CLIENT_ID = "S_iul25XJKSybg_fiSAc"
@@ -58,71 +54,6 @@ COLOR_LEGEND = [
 ]
 
 
-class ProgressTracker:
-    """진행 상황 추적 클래스"""
-    
-    @staticmethod
-    def create_job(job_type='search_prices'):
-        """새로운 작업 생성"""
-        job_id = str(uuid.uuid4())
-        initial_status = {
-            'job_id': job_id,
-            'job_type': job_type,
-            'stage': 'initializing',
-            'progress': 0,
-            'message': '작업 준비 중...',
-            'total_items': 0,
-            'processed_items': 0,
-            'estimated_time': 0,
-            'current_item': '',
-            'results': None,
-            'error': None,
-            'created_at': time.time()
-        }
-        cache.set(f'job_{job_id}', initial_status, timeout=3600)  # 1시간
-        return job_id
-    
-    @staticmethod
-    def update_job(job_id, **kwargs):
-        """작업 상태 업데이트"""
-        job_data = cache.get(f'job_{job_id}')
-        if job_data:
-            job_data.update(kwargs)
-            
-            # 진행률 자동 계산
-            if 'processed_items' in kwargs and job_data.get('total_items', 0) > 0:
-                job_data['progress'] = int((job_data['processed_items'] / job_data['total_items']) * 100)
-            
-            # 예상 시간 자동 계산
-            if 'processed_items' in kwargs and job_data['processed_items'] > 0:
-                elapsed = time.time() - job_data['created_at']
-                avg_time_per_item = elapsed / job_data['processed_items']
-                remaining_items = job_data['total_items'] - job_data['processed_items']
-                job_data['estimated_time'] = int(avg_time_per_item * remaining_items)
-            
-            cache.set(f'job_{job_id}', job_data, timeout=3600)
-            return True
-        return False
-    
-    @staticmethod
-    def get_job(job_id):
-        """작업 상태 조회"""
-        return cache.get(f'job_{job_id}')
-    
-    @staticmethod
-    def complete_job(job_id, results=None, error=None):
-        """작업 완료 처리"""
-        updates = {
-            'stage': 'error' if error else 'completed',
-            'progress': 100 if not error else 0,
-            'message': error if error else '작업이 완료되었습니다',
-            'estimated_time': 0,
-            'results': results,
-            'error': error
-        }
-        ProgressTracker.update_job(job_id, **updates)
-
-
 class ExcelDataSerializer(serializers.Serializer):
     """Custom serializer for Excel data with proper null handling"""
     
@@ -146,6 +77,15 @@ class CardGamePatternExtractor:
     @staticmethod
     def extract_onepiece_info(product_name):
         """Extract One Piece card search information"""
+        # 망가(슈퍼 패러렐) 패턴 체크 - 최우선 처리
+        if "망가" in product_name:
+            card_match = re.search(r'(OP|EB|ST)\d{2}-\d{3}', product_name)
+            if card_match:
+                card_number = card_match.group()
+                return f"망가 {card_number}"
+            else:
+                return None
+        
         # SP- 패턴 체크 (모두 스페셜 카드로 처리)
         sp_pattern = re.search(r'\bSP-(SP|SEC|R|SR|C|L|U|UC)\b', product_name)
         if sp_pattern:
@@ -221,22 +161,16 @@ class CardGamePatternExtractor:
     @staticmethod
     def extract_digimon_info(product_name):
         """Extract Digimon card search information"""
-        parts = product_name.split("/")
-        
-        if not parts or not parts[-1].strip().startswith("디지몬"):
+        # 새로운 형식: "디지몬카드"로 시작하는지 확인
+        if not product_name.startswith("디지몬카드"):
             return None
         
         # 희소/패러렐 여부 확인
-        has_rare = any("희소" in part for part in parts)
-        has_parallel = any("패러렐" in part for part in parts)
-        
-        if len(parts) < 2:
-            return None
-        
-        code_part = parts[-2].strip()
+        has_rare = "희소" in product_name
+        has_parallel = "패러렐" in product_name
         
         # 일반 카드 패턴
-        card_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{2,3}', code_part)
+        card_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{2,3}', product_name)
         if card_match:
             card_number = card_match.group()
             
@@ -257,7 +191,7 @@ class CardGamePatternExtractor:
             return result.strip()
         
         # 프로모 카드 패턴
-        promo_match = re.search(r'P-\d{3}', code_part)
+        promo_match = re.search(r'P-\d{3}', product_name)
         if promo_match:
             card_number = promo_match.group()
             prefix = "희소 " if has_rare else ("패러렐 " if has_parallel else "")
@@ -377,6 +311,7 @@ class ItemFilter:
     @staticmethod
     def check_item_filters(title, mall_name, card_type, card_number,
                           is_parallel, is_rare, is_special_day, is_special,
+                          is_super_parallel, price,
                           required_rarity, required_pokemon_name):
         """아이템 필터링 체크 (통과 여부와 로그 메시지 반환)"""
         
@@ -393,8 +328,34 @@ class ItemFilter:
             if card_number not in title:
                 return False, f"❌ 제외: 카드번호 '{card_number}' 불일치"
         
+        # 원피스 슈퍼 패러렐(망가) 키워드 확인
+        if card_type == "원피스" and is_super_parallel:
+            super_parallel_keywords = ['슈퍼 패러렐', '슈퍼패러렐', '슈퍼파라렐', '슈퍼 파라렐']
+            manga_keywords = ['망가', 'MANGA', 'manga']
+            
+            # 슈퍼 패러렐 키워드 확인
+            has_super_parallel = any(kw in title for kw in super_parallel_keywords)
+            # 망가 키워드 확인
+            has_manga = any(kw in title for kw in manga_keywords)
+            
+            # 두 키워드 중 하나라도 포함되어야 함
+            if not (has_super_parallel or has_manga):
+                return False, "❌ 제외: 슈퍼 패러렐 또는 망가 키워드 없음"
+            
+            # 가격 체크: 200,000원 미만 제외
+            if price < 200000:
+                return False, f"❌ 제외: 가격 {int(price)}원 (20만원 미만)"
+            
+            matched_keywords = []
+            if has_super_parallel:
+                matched_keywords.append("슈퍼 패러렐")
+            if has_manga:
+                matched_keywords.append("망가")
+            
+            logging.info(f"✅ 슈퍼 패러렐(망가) 키워드 매칭 성공 ({', '.join(matched_keywords)}) (가격: {int(price)}원)")
+        
         # 원피스 스페셜 키워드 확인
-        if card_type == "원피스" and is_special:
+        elif card_type == "원피스" and is_special:
             special_keywords = ['스페셜', 'SP']
             matched_keyword = next((kw for kw in special_keywords if kw in title), None)
             if not matched_keyword:
@@ -457,14 +418,17 @@ class ItemFilter:
         filter_match_info = "없음"
         
         # 검색 조건 설정
-        is_parallel = "패러렐" in search_name
+        is_super_parallel = "망가" in search_name  # 망가 키워드로 체크
+        is_parallel = "패러렐" in search_name and not is_super_parallel
         is_rare = "희소" in search_name
         is_special_day = "특일" in search_name
-        is_special = "SP" in search_name
+        is_special = "SP" in search_name and not is_super_parallel
         
         # 카드별 기본 필터 정보
         if card_type == "원피스":
-            if is_special:
+            if is_super_parallel:
+                filter_match_info = "슈퍼패러렐(망가)검색"
+            elif is_special:
                 filter_match_info = "스페셜검색"
             elif is_parallel:
                 filter_match_info = "패러렐검색"
@@ -495,6 +459,7 @@ class ItemFilter:
             passed, log_msg = ItemFilter.check_item_filters(
                 title, mall_name, card_type, card_number,
                 is_parallel, is_rare, is_special_day, is_special,
+                is_super_parallel, price,
                 required_rarity, required_pokemon_name
             )
             
@@ -526,12 +491,8 @@ class PriceProcessor:
     """Process price updates for card games"""
     
     @staticmethod
-    def process_price_update(product_name, original_price, job_id=None):
-        """가격 업데이트 처리 (진행 상황 추적 포함)"""
-        # 진행 상황 업데이트
-        if job_id:
-            ProgressTracker.update_job(job_id, current_item=product_name)
-        
+    def process_price_update(product_name, original_price):
+        """가격 업데이트 처리"""
         search_name, card_type, pokemon_info = CardGamePatternExtractor.extract_search_info(product_name)
         
         if not search_name:
@@ -663,17 +624,44 @@ def upload_excel(request):
                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-def background_price_search(job_id, items):
-    """백그라운드에서 가격 검색 수행"""
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def search_prices(request):
+    """
+    Search prices for card game products using Naver Shopping API
+    
+    Request body:
+    {
+        "items": [
+            {"productName": "string", "currentPrice": float},
+            ...
+        ]
+    }
+    
+    Response:
+    {
+        "results": [
+            {
+                "productName": "string",
+                "currentPrice": float,
+                "newPrice": float,
+                "priceDiff": int,
+                "cardType": "string",
+                "filterInfo": "string",
+                "searchKeyword": "string",
+                "validItemsCount": int
+            },
+            ...
+        ]
+    }
+    """
     try:
-        # 초기화
-        ProgressTracker.update_job(
-            job_id,
-            stage='processing',
-            total_items=len(items),
-            message='최저가 검색을 시작합니다...'
-        )
+        items = request.data.get('items', [])
         
+        if not items:
+            return Response({'error': 'No items provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # 시작 로그
         logging.info("=" * 80)
         logging.info("🚀 카드 최저가 검색 시작")
         logging.info("=" * 80)
@@ -689,19 +677,11 @@ def background_price_search(job_id, items):
             if not product_name:
                 continue
             
-            # 진행 상황 업데이트
-            ProgressTracker.update_job(
-                job_id,
-                processed_items=idx,
-                message=f'{idx}/{len(items)} 상품 처리 중...',
-                current_item=product_name
-            )
-            
             logging.info(f"[{idx}/{len(items)}] 처리 중...")
             
             try:
                 new_price, price_diff, card_type, filter_info, search_keyword, valid_count = \
-                    PriceProcessor.process_price_update(product_name, float(current_price), job_id)
+                    PriceProcessor.process_price_update(product_name, float(current_price))
                 
                 results.append({
                     'productName': product_name,
@@ -736,90 +716,15 @@ def background_price_search(job_id, items):
         logging.info(f"가격 변경: {changed_count}개")
         logging.info(f"변경 없음: {len(results) - changed_count}개\n")
         
-        # 작업 완료 처리
-        ProgressTracker.complete_job(job_id, results={
+        return Response({
             'results': results,
             'totalProcessed': len(results)
-        })
+        }, status=status.HTTP_200_OK)
         
     except Exception as e:
         logging.error(f"가격 검색 중 오류 발생: {str(e)}")
-        ProgressTracker.complete_job(job_id, error=f'Failed to search prices: {str(e)}')
-
-
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def search_prices(request):
-    """
-    Search prices for card game products using Naver Shopping API (비동기 버전)
-    
-    Request body:
-    {
-        "items": [
-            {"productName": "string", "currentPrice": float},
-            ...
-        ]
-    }
-    
-    Response:
-    {
-        "job_id": "string",
-        "message": "string"
-    }
-    """
-    try:
-        items = request.data.get('items', [])
-        
-        if not items:
-            return Response({'error': 'No items provided'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Job 생성
-        job_id = ProgressTracker.create_job('search_prices')
-        
-        # 백그라운드에서 처리 시작
-        thread = threading.Thread(target=background_price_search, args=(job_id, items))
-        thread.daemon = True
-        thread.start()
-        
-        # 즉시 응답 반환
-        return Response({
-            'job_id': job_id,
-            'message': '가격 검색이 시작되었습니다',
-            'total_items': len(items)
-        }, status=status.HTTP_202_ACCEPTED)
-        
-    except Exception as e:
-        logging.error(f"가격 검색 시작 중 오류 발생: {str(e)}")
-        return Response({'error': f'Failed to start price search: {str(e)}'}, 
+        return Response({'error': f'Failed to search prices: {str(e)}'}, 
                        status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def get_job_progress(request, job_id):
-    """
-    작업 진행 상황 조회
-    
-    Response:
-    {
-        "job_id": "string",
-        "stage": "string",  # initializing, processing, completed, error
-        "progress": int,  # 0-100
-        "message": "string",
-        "total_items": int,
-        "processed_items": int,
-        "estimated_time": int,  # seconds
-        "current_item": "string",
-        "results": object or null,
-        "error": string or null
-    }
-    """
-    job_data = ProgressTracker.get_job(job_id)
-    
-    if not job_data:
-        return Response({'error': 'Job not found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    return Response(job_data, status=status.HTTP_200_OK)
 
 
 @csrf_exempt
@@ -837,10 +742,7 @@ def download_excel(request):
                 "excelRow": int,
                 "price": float,
                 "stock": int,
-                "productName": "string" (optional, for logging),
-                "filterInfo": "string",
-                "validCount": int,
-                "searchKeyword": "string"
+                "productName": "string" (optional, for logging)
             },
             ...
         ]
@@ -940,8 +842,8 @@ def download_excel(request):
                     new_row[0] = price_diff  # 변동액
                     new_row[1] = int(original_price)  # 기존가격
                     new_row[2] = card_type or "미확인"  # 카드타입
-                    new_row[3] = mod.get('filterInfo', "")  # 필터적용
-                    new_row[4] = mod.get('validCount', 0)  # 검색개수
+                    new_row[3] = mod.get('filterInfo', "")  # 필터적용 (프론트에서 전달)
+                    new_row[4] = mod.get('validCount', 0)  # 검색개수 (프론트에서 전달)
                     new_row[5] = search_name or ""  # 검색어
                     
                     price_info = (original_price, new_price)
@@ -1025,6 +927,16 @@ def download_excel(request):
         logger.info("=" * 50)
         logger.info(f"파일명: {new_filename}")
         logger.info(f"응답 크기: {len(file_content)} bytes")
+        logger.info(f"\n추가된 정보:")
+        logger.info(f"   A열: 변동액 (정수)")
+        logger.info(f"   B열: 기존가격")
+        logger.info(f"   C열: 카드 타입")
+        logger.info(f"   D열: 필터 적용 여부")
+        logger.info(f"        - 원피스: 일반검색/패러렐검색/스페셜검색/슈퍼패러렐(망가)검색")
+        logger.info(f"        - 디지몬: 일반검색/희소검색/패러렐검색")
+        logger.info(f"        - 포켓몬: 포켓몬명만/포켓몬명+레어도/레어도만/필터없음")
+        logger.info(f"   E열: 검색된 상품 개수")
+        logger.info(f"   F열: 검색어")
         
         return response
         
