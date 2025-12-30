@@ -446,6 +446,11 @@ class PriceProcessor:
                 new_price = min_price + PLUS_PRICE
                 if new_price < 200:
                     new_price = 200
+                
+                # 10원 단위가 있으면 100원 단위로 올림
+                remainder = int(new_price) % 100
+                if remainder > 0:
+                    new_price = int(new_price) + (100 - remainder)
             else:
                 new_price = original_price
             price_diff = int(new_price - original_price)
