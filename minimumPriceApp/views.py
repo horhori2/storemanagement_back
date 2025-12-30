@@ -1,6 +1,6 @@
 """
-Django REST API for Excel file processing with Naver Shopping API price search
-TCG999 Special Price Mode - Pokemon cards get -100 won discount from TCG999 seller
+Django REST API for Excel file processing with Naver Shopping API price search - TCG999 Mode
+Supports Pokemon card special pricing with TCG999 vendor discount
 """
 
 from rest_framework.decorators import api_view, permission_classes, parser_classes
@@ -29,30 +29,29 @@ from openpyxl.utils import get_column_letter
 # API Configuration
 NAVER_CLIENT_ID = "S_iul25XJKSybg_fiSAc"
 NAVER_CLIENT_SECRET = "_73PsEM4om"
-PLUS_PRICE = 0  # Additional amount to add to lowest price
-API_DELAY = 0.3  # Delay between API requests (seconds)
+PLUS_PRICE = 0
+API_DELAY = 0.3
 
 # Excel Processing Configuration
-PRODUCT_NAME_COLUMN = 3  # D column (0-indexed)
-PRICE_COLUMN = 5  # F column (0-indexed)
-DATA_START_ROW = 6  # Row where actual data starts
+PRODUCT_NAME_COLUMN = 3
+PRICE_COLUMN = 5
+DATA_START_ROW = 6
 
-# Color definitions for price differences
+# Color definitions
 COLOR_FILLS = {
     'none': PatternFill(fill_type=None),
     'green': PatternFill(start_color="00FF00", end_color="00FF00", fill_type="solid"),
     'blue': PatternFill(start_color="0000FF", end_color="0000FF", fill_type="solid"),
     'yellow': PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid"),
     'red': PatternFill(start_color="FF0000", end_color="FF0000", fill_type="solid"),
-    'purple': PatternFill(start_color="800080", end_color="800080", fill_type="solid")  # TCG999 없음용
+    'purple': PatternFill(start_color="800080", end_color="800080", fill_type="solid")
 }
 
-COLOR_LEGEND = [
+COLOR_LEGEND_MAIN = [
     ("초록색", "1000원 이하", COLOR_FILLS['green']),
     ("파랑색", "2000원 이하", COLOR_FILLS['blue']),
     ("노랑색", "3000원 이하", COLOR_FILLS['yellow']),
-    ("빨강색", "3000원 초과", COLOR_FILLS['red']),
-    ("보라색", "TCG999 없음", COLOR_FILLS['purple'])
+    ("빨강색", "3000원 초과", COLOR_FILLS['red'])
 ]
 
 
@@ -82,19 +81,15 @@ class CardGamePatternExtractor:
         if "망가" in product_name:
             card_match = re.search(r'(OP|EB|ST)\d{2}-\d{3}', product_name)
             if card_match:
-                card_number = card_match.group()
-                return f"망가 {card_number}"
-            else:
-                return None
+                return f"망가 {card_match.group()}"
+            return None
         
         sp_pattern = re.search(r'\bSP-(SP|SEC|R|SR|C|L|U|UC)\b', product_name)
         if sp_pattern:
             card_match = re.search(r'(OP|EB|ST)\d{2}-\d{3}', product_name)
             if card_match:
-                card_number = card_match.group()
-                return f"SP {card_number}"
-            else:
-                return None
+                return f"SP {card_match.group()}"
+            return None
         
         has_p_rarity = bool(re.search(r'\bP-(SEC|R|SR|C|L|U)\b', product_name))
         
@@ -107,7 +102,6 @@ class CardGamePatternExtractor:
             match = re.search(pattern, product_name)
             if match:
                 card_number = match.group()
-                
                 if card_type == 'promo':
                     return f"원피스 {card_number}"
                 elif has_p_rarity:
@@ -128,28 +122,22 @@ class CardGamePatternExtractor:
                 match = re.search(pattern, product_name)
                 if match:
                     card_number = match.group()
-                    
                     if ptype == 'promo' or card_number.startswith('ST'):
-                        result = f"원피스 {card_number}"
+                        return f"원피스 {card_number}"
                     elif has_p_rarity:
-                        result = f"패러렐 {card_number}"
+                        return f"패러렐 {card_number}"
                     else:
-                        result = card_number
-                    
-                    return result
+                        return card_number
             
             grade_match = re.search(r'(SR|R|C|L|SEC)\s+(OP|ST|EB|PR)\d{2}-\d{3}', product_name)
             if grade_match:
                 card_number = grade_match.group(2)
-                
                 if has_p_rarity:
-                    result = f"패러렐 {card_number}"
+                    return f"패러렐 {card_number}"
                 elif card_number.startswith('ST'):
-                    result = f"원피스 {card_number}"
+                    return f"원피스 {card_number}"
                 else:
-                    result = card_number
-                
-                return result
+                    return card_number
         
         return None
     
@@ -165,28 +153,18 @@ class CardGamePatternExtractor:
         card_match = re.search(r'(EX|BT|ST|RB|LM)\d{1,2}-\d{2,3}', product_name)
         if card_match:
             card_number = card_match.group()
-            
             is_st_card = card_number.startswith('ST')
-            prefix = ""
-            
-            if has_rare:
-                prefix = "희소 "
-            elif has_parallel:
-                prefix = "패러렐 "
+            prefix = "희소 " if has_rare else ("패러렐 " if has_parallel else "")
             
             if is_st_card:
-                result = f"{prefix}디지몬 {card_number}"
+                return f"{prefix}디지몬 {card_number}".strip()
             else:
-                result = f"{prefix}{card_number}" if prefix else card_number
-            
-            return result.strip()
+                return f"{prefix}{card_number}".strip() if prefix else card_number
         
         promo_match = re.search(r'P-\d{3}', product_name)
         if promo_match:
-            card_number = promo_match.group()
             prefix = "희소 " if has_rare else ("패러렐 " if has_parallel else "")
-            result = f"{prefix}디지몬 {card_number}"
-            return result.strip()
+            return f"{prefix}디지몬 {promo_match.group()}".strip()
         
         return None
     
@@ -202,7 +180,6 @@ class CardGamePatternExtractor:
         
         words = product_name.split()
         search_text = " ".join(words[:-1]) if len(words) > 1 else product_name
-        last_word = words[-1] if len(words) > 1 else ""
         
         rarity_pattern = r'\b(UR|SSR|SR|RR|RRR|CHR|CSR|BWR|AR|SAR|HR|R|U|C|몬스터볼|마스터볼|이로치)\b'
         rarity_match = re.search(rarity_pattern, search_text)
@@ -244,7 +221,7 @@ class CardGamePatternExtractor:
     
     @staticmethod
     def extract_search_info(product_name):
-        """Extract search information from product name (unified function)"""
+        """Extract search information from product name"""
         digimon_result = CardGamePatternExtractor.extract_digimon_info(product_name)
         if digimon_result:
             return digimon_result, "디지몬", None
@@ -278,16 +255,14 @@ class NaverShoppingAPI:
             if response.getcode() == 200:
                 result = json.loads(response.read())
                 return result.get('items', [])
-            else:
-                logging.error("API request failed")
-                return []
+            return []
         except Exception as e:
             logging.error(f"API exception: {e}")
             return []
 
 
 class ItemFilter:
-    """Filter API search results based on card game rules - TCG999 Mode"""
+    """Filter API search results - TCG999 Mode"""
     
     @staticmethod
     def check_item_filters(title, mall_name, card_type, card_number,
@@ -297,14 +272,14 @@ class ItemFilter:
         """아이템 필터링 체크"""
         
         if mall_name in ["화성스토어-TCG-", "네이버", "쿠팡"]:
-            return False, f"❌ 제외: {mall_name}"
+            return False, f"제외: {mall_name}"
         
         if any(keyword in title for keyword in ['일본', '일본판', 'JP', 'JPN', '일판']):
-            return False, "❌ 제외: 일본판"
+            return False, "제외: 일본판"
         
         if card_type in ["원피스", "디지몬"] and card_number:
             if card_number not in title:
-                return False, f"❌ 제외: 카드번호 '{card_number}' 불일치"
+                return False, "제외: 카드번호 불일치"
         
         if card_type == "원피스" and is_super_parallel:
             super_parallel_keywords = ['슈퍼 패러렐', '슈퍼패러렐', '슈퍼파라렐', '슈퍼 파라렐']
@@ -314,88 +289,71 @@ class ItemFilter:
             has_manga = any(kw in title for kw in manga_keywords)
             
             if not (has_super_parallel or has_manga):
-                return False, "❌ 제외: 슈퍼 패러렐 또는 망가 키워드 없음"
+                return False, "제외: 슈퍼 패러렐/망가 키워드 없음"
             
             if price < 200000:
-                return False, f"❌ 제외: 가격 {int(price)}원 (20만원 미만)"
+                return False, "제외: 가격 20만원 미만"
         
         elif card_type == "원피스" and is_special:
-            special_keywords = ['스페셜', 'SP']
-            matched_keyword = next((kw for kw in special_keywords if kw in title), None)
-            if not matched_keyword:
-                return False, "❌ 제외: 스페셜 키워드 없음"
+            if not any(kw in title for kw in ['스페셜', 'SP']):
+                return False, "제외: 스페셜 키워드 없음"
         
         elif card_type == "원피스" and is_parallel:
             parallel_keywords = ['패러렐', '다른', '패레', 'P시크릿레어', '페러럴', '패러럴', '페러렐', '페레']
-            matched_keyword = next((kw for kw in parallel_keywords if kw in title), None)
-            if not matched_keyword:
-                return False, "❌ 제외: 패러렐 키워드 없음"
+            if not any(kw in title for kw in parallel_keywords):
+                return False, "제외: 패러렐 키워드 없음"
         
         elif card_type == "디지몬":
             if is_rare and "희소" not in title:
-                return False, "❌ 제외: 희소 키워드 없음"
-            
+                return False, "제외: 희소 키워드 없음"
             if is_parallel and "패러렐" not in title:
-                return False, "❌ 제외: 패러렐 키워드 없음"
+                return False, "제외: 패러렐 키워드 없음"
         
         elif card_type == "포켓몬":
             if is_special_day and "특일" not in title:
-                return False, "❌ 제외: 특일 키워드 없음"
+                return False, "제외: 특일 키워드 없음"
             
             if required_pokemon_name:
                 clean_title = re.sub(r'<[^>]+>', '', title)
-                
                 required_name_no_space = re.sub(r'\s+', '', required_pokemon_name)
                 title_no_space = re.sub(r'\s+', '', clean_title)
                 
-                if required_name_no_space.lower() in title_no_space.lower():
-                    pass
-                else:
+                if required_name_no_space.lower() not in title_no_space.lower():
                     required_words = [word for word in required_pokemon_name.split() 
                                     if word.lower() not in ['ex', 'v', 'vmax', 'vstar']]
-                    
                     word_matches = sum(1 for word in required_words if word.lower() in clean_title.lower())
                     
                     if word_matches != len(required_words) or len(required_words) == 0:
-                        return False, f"❌ 개별 단어 매칭 실패 ({word_matches}/{len(required_words)})"
+                        return False, "제외: 포켓몬명 매칭 실패"
             
             if required_rarity:
                 clean_title = re.sub(r'<[^>]+>', '', title)
-                
                 if required_rarity not in clean_title:
-                    return False, f"❌ 제외: 레어도 '{required_rarity}' 미포함"
+                    return False, "제외: 레어도 미포함"
         
-        return True, "✅ 통과: 필터링 조건 만족"
+        return True, "통과"
     
     @staticmethod
     def filter_api_results_tcg999(items, search_name, card_type, pokemon_info=None):
-        """TCG999 전용 필터링 - 포켓몬카드만 특별가격 적용"""
+        """TCG999 전용 필터링 - 포켓몬카드만"""
         
-        # 포켓몬카드가 아니면 일반 필터링
         if card_type != "포켓몬":
             return ItemFilter.filter_api_results_normal(items, search_name, card_type, pokemon_info)
         
         min_price = None
-        valid_items_count = 0
-        filter_match_info = "필터없음"
-        tcg999_found = False
         tcg999_count = 0
+        filter_match_info = "필터없음"
         
         is_special_day = "특일" in search_name
         required_rarity, required_pokemon_name = pokemon_info or (None, None)
         
-        logging.info("🎯 TCG999 특별가격 모드 - 포켓몬카드")
-        
-        # TCG999 판매처만 검색
         for item in items:
             title = item['title']
             price = float(item['lprice'])
             mall_name = item.get('mallName', '')
             
             if mall_name == "TCG999":
-                logging.info(f"✅ TCG999 판매처 발견! 가격: {price}원")
-                
-                passed, log_msg = ItemFilter.check_item_filters(
+                passed, _ = ItemFilter.check_item_filters(
                     title, mall_name, card_type, None,
                     False, False, is_special_day, False,
                     False, price,
@@ -403,15 +361,11 @@ class ItemFilter:
                 )
                 
                 if passed:
-                    tcg999_found = True
                     tcg999_count += 1
                     discounted_price = price - 100
-                    logging.info(f"🔥 TCG999 가격 적용: {price} → {discounted_price} (-100원)")
                     
                     if min_price is None or discounted_price < min_price:
                         min_price = discounted_price
-                        valid_items_count = tcg999_count
-                        logging.info(f"🎯 최저가 업데이트: {min_price} (TCG999 {tcg999_count}개 중)")
                         
                         if required_pokemon_name and required_rarity:
                             filter_match_info = "포켓몬명+레어도"
@@ -419,37 +373,22 @@ class ItemFilter:
                             filter_match_info = "포켓몬명만"
                         elif required_rarity:
                             filter_match_info = "레어도만"
-                        else:
-                            filter_match_info = "필터없음"
         
-        logging.info(f"TCG999 발견: {tcg999_found} (총 {tcg999_count}개)")
-        
-        return min_price, valid_items_count, filter_match_info, tcg999_found
+        # TCG999가 없으면 filter_match_info는 "필터없음"으로 유지
+        return min_price, tcg999_count, filter_match_info
     
     @staticmethod
     def filter_api_results_normal(items, search_name, card_type, pokemon_info=None):
-        """일반 필터링 (원피스/디지몬)"""
+        """일반 필터링 - 원피스/디지몬카드"""
         min_price = None
         valid_items_count = 0
-        filter_match_info = "없음"
+        filter_match_info = "일반검색"
         
         is_super_parallel = "망가" in search_name
         is_parallel = "패러렐" in search_name and not is_super_parallel
         is_rare = "희소" in search_name
         is_special_day = "특일" in search_name
         is_special = "SP" in search_name and not is_super_parallel
-        
-        if card_type == "원피스":
-            if is_super_parallel:
-                filter_match_info = "슈퍼패러렐(망가)검색"
-            elif is_special:
-                filter_match_info = "스페셜검색"
-            elif is_parallel:
-                filter_match_info = "패러렐검색"
-            else:
-                filter_match_info = "일반검색"
-        elif card_type == "디지몬":
-            filter_match_info = "희소검색" if is_rare else ("패러렐검색" if is_parallel else "일반검색")
         
         card_number = None
         if card_type in ["원피스", "디지몬"]:
@@ -464,26 +403,23 @@ class ItemFilter:
             price = float(item['lprice'])
             mall_name = item.get('mallName', '')
             
-            passed, log_msg = ItemFilter.check_item_filters(
+            passed, _ = ItemFilter.check_item_filters(
                 title, mall_name, card_type, card_number,
                 is_parallel, is_rare, is_special_day, is_special,
                 is_super_parallel, price,
                 required_rarity, required_pokemon_name
             )
             
-            if not passed:
-                continue
-            
-            valid_items_count += 1
-            
-            if min_price is None or price < min_price:
-                min_price = price
+            if passed:
+                valid_items_count += 1
+                if min_price is None or price < min_price:
+                    min_price = price
         
-        return min_price, valid_items_count, filter_match_info, False
+        return min_price, valid_items_count, filter_match_info
 
 
 class PriceProcessor:
-    """Process price updates for card games - TCG999 Mode"""
+    """Process price updates - TCG999 Mode"""
     
     @staticmethod
     def process_price_update(product_name, original_price):
@@ -492,35 +428,31 @@ class PriceProcessor:
         
         if not search_name:
             logging.info(f"{product_name} : {int(original_price)} (검색 패턴 없음)")
-            return original_price, 0, "미확인", "패턴없음", "패턴없음", 0, False
+            return original_price, 0, "미확인", "패턴없음", "패턴없음", 0
         
         items = NaverShoppingAPI.search(search_name)
-        min_price, valid_items_count, filter_match_info, tcg999_found = ItemFilter.filter_api_results_tcg999(
+        min_price, valid_items_count, filter_match_info = ItemFilter.filter_api_results_tcg999(
             items, search_name, card_type, pokemon_info
         )
         
-        # 포켓몬카드이고 TCG999를 못 찾은 경우 기존 가격 유지
-        if card_type == "포켓몬" and not tcg999_found:
+        # filter_info가 "필터없음"이면 TCG999가 없는 것
+        tcg999_not_found = (card_type == "포켓몬" and filter_match_info == "필터없음")
+        
+        if tcg999_not_found:
             new_price = original_price
             price_diff = 0
         else:
             if min_price is not None:
                 new_price = min_price + PLUS_PRICE
-                # 최저가격이 200원 미만인 경우 200원으로 설정
                 if new_price < 200:
-                    logging.info(f"⚠️ 최저가 {int(new_price)}원 → 200원으로 조정")
                     new_price = 200
             else:
                 new_price = original_price
-            
             price_diff = int(new_price - original_price)
         
-        # 로깅
-        tcg_indicator = " [TCG999 -100원 적용✓]" if (card_type == "포켓몬" and tcg999_found) else ""
-        not_found_indicator = " [⚠️ TCG999 없음]" if (card_type == "포켓몬" and not tcg999_found) else ""
-        tcg999_count_text = ""
-        if card_type == "포켓몬" and tcg999_found and valid_items_count > 1:
-            tcg999_count_text = f" (TCG999 {valid_items_count}개 중 최저가)"
+        tcg_indicator = " [TCG999 -100원 적용✓]" if (card_type == "포켓몬" and not tcg999_not_found and filter_match_info != "필터없음") else ""
+        not_found_indicator = " [⚠️ TCG999 없음]" if tcg999_not_found else ""
+        tcg999_count_text = f" (TCG999 {valid_items_count}개 중 최저가)" if (card_type == "포켓몬" and not tcg999_not_found and valid_items_count > 1) else ""
         
         if abs(price_diff) > 0:
             if card_type == "포켓몬" and pokemon_info:
@@ -546,7 +478,7 @@ class PriceProcessor:
         logging.info("-" * 60)
         
         time.sleep(API_DELAY)
-        return new_price, price_diff, card_type, filter_match_info, search_name, valid_items_count, tcg999_found
+        return new_price, price_diff, card_type, filter_match_info, search_name, valid_items_count
     
     @staticmethod
     def get_fill_color(original_price, new_price):
@@ -588,8 +520,7 @@ def upload_excel(request):
     excel_file = request.FILES['file']
     
     if not excel_file.name.endswith(('.xlsx', '.xls')):
-        return Response({'error': 'Invalid file format. Please upload .xlsx or .xls file'}, 
-                       status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'Invalid file format'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
         df = pd.read_excel(excel_file, header=None)
@@ -624,23 +555,16 @@ def upload_excel(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def search_prices(request):
-    """
-    Search prices for card game products using Naver Shopping API - TCG999 Mode
-    Pokemon cards get -100 won discount from TCG999 seller
-    """
+    """Search prices - TCG999 Mode"""
     try:
         items = request.data.get('items', [])
         
         if not items:
             return Response({'error': 'No items provided'}, status=status.HTTP_400_BAD_REQUEST)
         
-        # 시작 로그
         logging.info("=" * 80)
         logging.info("🚀 TCG999 특별가격 모드 - 카드 최저가 검색 시작")
         logging.info("=" * 80)
-        logging.info("🎯 포켓몬카드: TCG999 판매처 가격 -100원 적용")
-        logging.info("   TCG999 없을 경우: 기존 가격 유지 + 빨간색 표시")
-        logging.info("   원피스/디지몬카드: 기존 방식대로 처리")
         logging.info(f"처리할 상품 수: {len(items)}개\n")
         
         results = []
@@ -655,7 +579,7 @@ def search_prices(request):
             logging.info(f"[{idx}/{len(items)}] 처리 중...")
             
             try:
-                new_price, price_diff, card_type, filter_info, search_keyword, valid_count, tcg999_found = \
+                new_price, price_diff, card_type, filter_info, search_keyword, valid_count = \
                     PriceProcessor.process_price_update(product_name, float(current_price))
                 
                 results.append({
@@ -666,8 +590,7 @@ def search_prices(request):
                     'cardType': card_type,
                     'filterInfo': filter_info,
                     'searchKeyword': search_keyword,
-                    'validItemsCount': valid_count,
-                    'tcg999Found': tcg999_found  # TCG999 발견 여부 추가
+                    'validItemsCount': valid_count
                 })
             except Exception as e:
                 logging.error(f"상품 처리 중 오류 ({product_name}): {str(e)}")
@@ -680,29 +603,16 @@ def search_prices(request):
                     'filterInfo': '처리실패',
                     'searchKeyword': '처리실패',
                     'validItemsCount': 0,
-                    'tcg999Found': False,
                     'error': str(e)
                 })
         
-        # 완료 로그
         logging.info("\n" + "=" * 80)
         logging.info("✅ TCG999 특별가격 모드 - 카드 최저가 검색 완료")
         logging.info("=" * 80)
-        changed_count = sum(1 for r in results if r['priceDiff'] != 0)
-        tcg999_count = sum(1 for r in results if r.get('tcg999Found', False))
-        pokemon_no_tcg999 = sum(1 for r in results if r['cardType'] == '포켓몬' and not r.get('tcg999Found', False))
-        
-        logging.info(f"총 {len(results)}개 상품 처리 완료")
-        logging.info(f"가격 변경: {changed_count}개")
-        logging.info(f"변경 없음: {len(results) - changed_count}개")
-        logging.info(f"TCG999 적용: {tcg999_count}개")
-        logging.info(f"포켓몬(TCG999 없음): {pokemon_no_tcg999}개\n")
         
         return Response({
             'results': results,
-            'totalProcessed': len(results),
-            'tcg999Applied': tcg999_count,
-            'pokemonNoTcg999': pokemon_no_tcg999
+            'totalProcessed': len(results)
         }, status=status.HTTP_200_OK)
         
     except Exception as e:
@@ -714,29 +624,22 @@ def search_prices(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def download_excel(request):
-    """
-    Download modified Excel file with updated prices and stock - TCG999 Mode
-    Pokemon cards without TCG999 seller are marked in red
-    """
+    """Download modified Excel file - TCG999 Mode"""
     temp_file_path = None
     output_temp_path = None
     
     try:
-        # 1. 로깅 설정
         logger.info("=" * 50)
         logger.info("Excel 파일 처리 시작 (TCG999 모드)")
         logger.info("=" * 50)
         
-        # 2. 요청 데이터 파싱
         if 'excel_file' not in request.FILES:
             return JsonResponse({'error': '파일이 제공되지 않았습니다'}, status=400)
         
         excel_file = request.FILES['excel_file']
         original_filename = excel_file.name
         logger.info(f"업로드된 파일: {original_filename}")
-        logger.info(f"파일 크기: {excel_file.size} bytes")
         
-        # modifications 데이터 파싱
         try:
             modifications_json = request.POST.get('modifications')
             if not modifications_json:
@@ -748,7 +651,6 @@ def download_excel(request):
             logger.error(f"JSON 파싱 오류: {str(e)}")
             return JsonResponse({'error': 'modifications JSON 파싱 실패'}, status=400)
         
-        # 3. 임시 파일 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as temp_file:
             temp_file_path = temp_file.name
             for chunk in excel_file.chunks():
@@ -756,7 +658,6 @@ def download_excel(request):
         
         logger.info(f"임시 파일 생성: {temp_file_path}")
         
-        # 4. 엑셀 파일 로드
         try:
             workbook = openpyxl.load_workbook(temp_file_path)
             worksheet = workbook.worksheets[0]
@@ -765,103 +666,87 @@ def download_excel(request):
             logger.error(f"워크북 로드 실패: {str(e)}")
             raise e
         
-        # 5. 기존 워크시트를 읽어서 새 워크북에 A~F열 추가하여 재구성
         new_workbook = openpyxl.Workbook()
         new_worksheet = new_workbook.active
         
-        logger.info("=" * 30)
         logger.info("새 워크시트 생성 - A~F열 추가")
-        logger.info("=" * 30)
         
-        # 6. modifications를 딕셔너리로 변환 (빠른 조회를 위해)
         mod_dict = {int(mod['excelRow']): mod for mod in modifications}
         
-        # 7. 모든 행 처리
         for row_idx, row in enumerate(worksheet.iter_rows(), 1):
             new_row = []
             price_info = None
             tcg999_not_found = False
             
-            # 첫 번째 행 (헤더)
             if row_idx == 1:
                 new_row.extend(["변동액", "기존가격", "카드타입", "필터적용", "검색개수", "검색어"])
-                # 기존 데이터 추가
                 for cell in row:
                     new_row.append(cell.value)
             else:
-                # 데이터 행 - 기본값 설정
                 new_row.extend([0, 0, "", "", 0, ""])
                 
-                # 수정 정보가 있는 경우
                 if row_idx in mod_dict:
                     mod = mod_dict[row_idx]
                     product_name = mod.get('productName', '')
                     
-                    # D열(상품명)에서 원본 가격 가져오기
-                    original_price_cell = worksheet.cell(row=row_idx, column=6)  # F열
+                    original_price_cell = worksheet.cell(row=row_idx, column=6)
                     original_price = float(original_price_cell.value) if original_price_cell.value else 0
                     new_price = float(mod.get('price', original_price))
                     price_diff = int(new_price - original_price)
                     
-                    # 카드 정보 추출 (최저가 검색 시 저장된 정보)
                     search_name, card_type, pokemon_info = CardGamePatternExtractor.extract_search_info(product_name)
                     
-                    # TCG999 발견 여부 확인
-                    tcg999_found = mod.get('tcg999Found', False)
+                    filter_info = mod.get('filterInfo', "")
                     
-                    # 포켓몬카드이고 TCG999를 못 찾은 경우
-                    if card_type == "포켓몬" and not tcg999_found:
+                    # filterInfo가 "필터없음"이면 TCG999가 없는 것으로 판단
+                    if card_type == "포켓몬" and filter_info == "필터없음":
                         tcg999_not_found = True
+                        logger.info(f"행 {row_idx}: 타입={card_type}, 필터={filter_info} → 보라색 표시 대상")
+                    else:
+                        logger.info(f"행 {row_idx}: 타입={card_type}, 필터={filter_info}")
                     
-                    # A~F열 정보 설정
-                    new_row[0] = price_diff  # 변동액
-                    new_row[1] = int(original_price)  # 기존가격
-                    new_row[2] = card_type or "미확인"  # 카드타입
-                    new_row[3] = mod.get('filterInfo', "")  # 필터적용
-                    new_row[4] = mod.get('validCount', 0)  # 검색개수
-                    new_row[5] = search_name or ""  # 검색어
+                    new_row[0] = price_diff
+                    new_row[1] = int(original_price)
+                    new_row[2] = card_type or "미확인"
+                    new_row[3] = filter_info
+                    new_row[4] = mod.get('validCount', 0)
+                    new_row[5] = search_name or ""
                     
                     price_info = (original_price, new_price, tcg999_not_found)
-                    
-                    tcg_status = "[TCG999 적용]" if tcg999_found else "[TCG999 없음]" if card_type == "포켓몬" else ""
-                    logger.info(f"행 {row_idx}: {product_name} | {int(original_price)} → {int(new_price)} ({price_diff:+}원) {tcg_status}")
                 
-                # 기존 데이터 복사
                 for cell in row:
-                    # F열(가격) 또는 H열(재고)이고 수정 정보가 있으면 새 값 사용
                     if row_idx in mod_dict:
                         mod = mod_dict[row_idx]
-                        if cell.column == 6:  # F열 (가격)
+                        if cell.column == 6:
                             new_row.append(float(mod.get('price', cell.value or 0)))
-                        elif cell.column == 8:  # H열 (재고)
+                        elif cell.column == 8:
                             new_row.append(int(float(mod.get('stock', cell.value or 0))))
                         else:
                             new_row.append(cell.value)
                     else:
                         new_row.append(cell.value)
             
-            # 새 워크시트에 행 추가
             new_worksheet.append(new_row)
             
-            # 가격 셀에 색상 적용 (A~F 6개 컬럼 추가되어 F열이 12열로 이동)
             if price_info is not None and row_idx > 1:
-                price_cell = new_worksheet.cell(row=row_idx, column=12)  # F열이 12열로 이동
+                price_cell = new_worksheet.cell(row=row_idx, column=12)
                 
-                # TCG999 없는 포켓몬카드는 보라색
                 if price_info[2]:  # tcg999_not_found
+                    logger.info(f"  → 보라색 적용: 행 {row_idx}")
                     price_cell.fill = COLOR_FILLS['purple']
                 else:
                     fill_color = PriceProcessor.get_fill_color(price_info[0], price_info[1])
                     price_cell.fill = fill_color
         
-        # 8. 색상 범례 추가 (첫 번째 열의 2~5행)
-        for i, (color_name, range_text, fill_color) in enumerate(COLOR_LEGEND, 2):
+        for i, (color_name, range_text, fill_color) in enumerate(COLOR_LEGEND_MAIN, 2):
             new_worksheet.cell(row=i, column=1, value=color_name).fill = fill_color
             new_worksheet.cell(row=i, column=2, value=range_text)
         
+        new_worksheet.cell(row=2, column=3, value="보라색").fill = COLOR_FILLS['purple']
+        new_worksheet.cell(row=2, column=4, value="TCG999 없음")
+        
         logger.info("색상 범례 추가 완료")
         
-        # 9. 파일 저장
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as output_temp:
             output_temp_path = output_temp.name
         
@@ -875,14 +760,12 @@ def download_excel(request):
             new_workbook.close()
             workbook.close()
         
-        # 10. 저장된 파일 검증
         output_size = os.path.getsize(output_temp_path)
         logger.info(f"저장된 파일 크기: {output_size} bytes")
         
         if output_size == 0:
             raise Exception("저장된 파일 크기가 0입니다")
         
-        # 11. HTTP 응답 생성
         with open(output_temp_path, 'rb') as f:
             file_content = f.read()
         
@@ -900,17 +783,6 @@ def download_excel(request):
         logger.info("Excel 파일 처리 완료 (TCG999 모드)")
         logger.info("=" * 50)
         logger.info(f"파일명: {new_filename}")
-        logger.info(f"응답 크기: {len(file_content)} bytes")
-        logger.info(f"\n🎯 TCG999 특별가격 모드 적용됨")
-        logger.info(f"   - 포켓몬카드: TCG999 판매처 가격 -100원")
-        logger.info(f"   - TCG999 없음: 빨간색 표시 (기존 가격 유지)")
-        logger.info(f"\n추가된 정보:")
-        logger.info(f"   A열: 변동액 (정수)")
-        logger.info(f"   B열: 기존가격")
-        logger.info(f"   C열: 카드 타입")
-        logger.info(f"   D열: 필터 적용 여부")
-        logger.info(f"   E열: 검색된 상품 개수")
-        logger.info(f"   F열: 검색어")
         
         return response
         
@@ -924,7 +796,6 @@ def download_excel(request):
         return JsonResponse({'error': f'처리 중 오류가 발생했습니다: {str(e)}'}, status=500)
         
     finally:
-        # 임시 파일 정리
         for file_path, desc in [(temp_file_path, "입력"), (output_temp_path, "출력")]:
             if file_path and os.path.exists(file_path):
                 try:
